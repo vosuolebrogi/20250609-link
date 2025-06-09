@@ -90,7 +90,10 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
     
     # Строим URL
     param_string = '&'.join([f'{k}={v}' for k, v in params.items()])
-    final_url = f"{base_url}{deeplink}?{param_string}"
+    
+    # Определяем разделитель - ? если в deeplink нет параметров, & если есть
+    separator = '&' if '?' in deeplink else '?'
+    final_url = f"{base_url}{deeplink}{separator}{param_string}"
     
     return final_url
 
@@ -308,7 +311,7 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     await message.answer(
         f"🎉 Готово! Твоя ссылка:\n\n"
         f"`{final_link}`\n\n"
-        f"📋 Ссылка скопирована. Можешь использовать её в своей кампании!\n\n"
+        f"📋 Скопируй ссылку выше и используй в своей кампании!\n\n"
         f"Чтобы создать новую ссылку, отправь /start",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode='Markdown'
