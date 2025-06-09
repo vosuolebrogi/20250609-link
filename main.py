@@ -2,7 +2,7 @@ import os
 import re
 import logging
 from datetime import datetime
-from urllib.parse import quote, urlparse
+from urllib.parse import quote, urlparse, parse_qs, unquote
 from typing import Dict, Any
 
 from aiogram import Bot, Dispatcher, types
@@ -243,6 +243,39 @@ async def process_custom_deeplink(message: types.Message, state: FSMContext):
         await message.answer("❌ Диплинк должен начинаться с 'yandextaxi://'. Попробуй ещё раз:")
         return
     
+    # Проверяем наличие параметра href и его URL-кодирование
+    if "href=" in deeplink:
+        try:
+            # Извлекаем часть после yandextaxi://
+            deeplink_part = deeplink[13:]  # убираем yandextaxi://
+            
+            # Если есть параметры
+            if "?" in deeplink_part:
+                query_part = deeplink_part.split("?", 1)[1]
+                params = parse_qs(query_part)
+                
+                if "href" in params:
+                    href_value = params["href"][0]
+                    
+                    # Проверяем, является ли значение href URL-кодированным
+                    # Если после декодирования значение изменилось, значит оно было кодировано
+                    decoded_href = unquote(href_value)
+                    
+                    # Проверяем наличие символов, которые должны быть закодированы
+                    needs_encoding = any(char in href_value for char in ['%20', '%3A', '%2F', '%3F', '%26', '%3D'])
+                    
+                    if not needs_encoding and any(char in decoded_href for char in [' ', ':', '/', '?', '&', '=']):
+                        await message.answer(
+                            "❌ Параметр href должен быть URL-кодирован!\n"
+                            f"Например: вместо '{decoded_href}' используй '{quote(decoded_href)}'\n\n"
+                            "Попробуй ещё раз:"
+                        )
+                        return
+                        
+        except Exception as e:
+            await message.answer("❌ Ошибка при проверке диплинка. Попробуй ещё раз:")
+            return
+    
     await state.update_data(deeplink=deeplink)
     await ask_desktop_url(message, state)
 
@@ -294,4 +327,4 @@ async def handle_other_messages(message: types.Message):
 
 if __name__ == '__main__':
     print("🚀 Запуск бота...")
-    executor.start_polling(dp, skip_updates=True) 
+    executor.start_polling(dp, skip_updates=True)
