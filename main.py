@@ -308,10 +308,16 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
     final_link = build_final_link(user_data)
     
+    # Создаём ссылку для сокращения
+    encoded_link = quote(final_link)
+    shortener_url = f"https://go-admin-frontend.taxi.yandex-team.ru/adjust?url={encoded_link}"
+    
     await message.answer(
         f"🎉 Готово! Твоя ссылка:\n\n"
         f"`{final_link}`\n\n"
         f"📋 Скопируй ссылку выше и используй в своей кампании!\n\n"
+        f"📱 Для использования в SMS или QR-кодах рекомендуется сократить ссылку:\n"
+        f"[Перейти к сокращению ссылки]({shortener_url})\n\n"
         f"Чтобы создать новую ссылку, отправь /start",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode='Markdown'
