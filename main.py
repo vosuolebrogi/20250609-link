@@ -246,7 +246,7 @@ async def process_custom_deeplink(message: types.Message, state: FSMContext):
         await message.answer("❌ Диплинк должен начинаться с 'yandextaxi://'. Попробуй ещё раз:")
         return
     
-    # Проверяем наличие параметра href и его URL-кодирование
+    # Проверяем наличие параметра href и автоматически кодируем его при необходимости
     if "href=" in deeplink:
         try:
             # Извлекаем часть после yandextaxi://
@@ -254,29 +254,34 @@ async def process_custom_deeplink(message: types.Message, state: FSMContext):
             
             # Если есть параметры
             if "?" in deeplink_part:
-                query_part = deeplink_part.split("?", 1)[1]
+                path_part, query_part = deeplink_part.split("?", 1)
                 params = parse_qs(query_part)
                 
                 if "href" in params:
                     href_value = params["href"][0]
                     
-                    # Проверяем, является ли значение href URL-кодированным
-                    # Если после декодирования значение изменилось, значит оно было кодировано
+                    # Проверяем, нуждается ли значение href в кодировании
+                    needs_encoding = any(char in href_value for char in ['%20', '%3A', '%2F', '%3F', '%26', '%3D'])
                     decoded_href = unquote(href_value)
                     
-                    # Проверяем наличие символов, которые должны быть закодированы
-                    needs_encoding = any(char in href_value for char in ['%20', '%3A', '%2F', '%3F', '%26', '%3D'])
-                    
+                    # Если значение не закодировано и содержит спецсимволы, кодируем его
                     if not needs_encoding and any(char in decoded_href for char in [' ', ':', '/', '?', '&', '=']):
-                        await message.answer(
-                            "❌ Параметр href должен быть URL-кодирован!\n"
-                            f"Например: вместо '{decoded_href}' используй '{quote(decoded_href)}'\n\n"
-                            "Попробуй ещё раз:"
-                        )
-                        return
+                        encoded_href = quote(href_value)
+                        
+                        # Пересобираем параметры с закодированным href
+                        updated_params = []
+                        for key, values in params.items():
+                            for value in values:
+                                if key == "href":
+                                    updated_params.append(f"{key}={encoded_href}")
+                                else:
+                                    updated_params.append(f"{key}={value}")
+                        
+                        # Пересобираем диплинк
+                        deeplink = f"yandextaxi://{path_part}?{'&'.join(updated_params)}"
                         
         except Exception as e:
-            await message.answer("❌ Ошибка при проверке диплинка. Попробуй ещё раз:")
+            await message.answer("❌ Ошибка при обработке диплинка. Попробуй ещё раз:")
             return
     
     await state.update_data(deeplink=deeplink)
