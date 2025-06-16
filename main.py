@@ -252,33 +252,22 @@ async def process_custom_deeplink(message: types.Message, state: FSMContext):
             # Извлекаем часть после yandextaxi://
             deeplink_part = deeplink[13:]  # убираем yandextaxi://
             
-            # Если есть параметры
-            if "?" in deeplink_part:
-                path_part, query_part = deeplink_part.split("?", 1)
-                params = parse_qs(query_part)
+            # Ищем позицию href= в диплинке
+            href_pos = deeplink_part.find("href=")
+            if href_pos != -1:
+                # Разделяем на части: до href= и после href=
+                before_href = deeplink_part[:href_pos]
+                href_value = deeplink_part[href_pos + 5:]  # все после "href="
                 
-                if "href" in params:
-                    href_value = params["href"][0]
+                # Проверяем, нуждается ли значение href в кодировании
+                needs_encoding = any(char in href_value for char in ['%20', '%3A', '%2F', '%3F', '%26', '%3D'])
+                
+                # Если значение содержит спецсимволы и не закодировано, кодируем его
+                if not needs_encoding and any(char in href_value for char in [' ', ':', '/', '?', '&', '=']):
+                    encoded_href = quote(href_value)
                     
-                    # Проверяем, нуждается ли значение href в кодировании
-                    needs_encoding = any(char in href_value for char in ['%20', '%3A', '%2F', '%3F', '%26', '%3D'])
-                    decoded_href = unquote(href_value)
-                    
-                    # Если значение не закодировано и содержит спецсимволы, кодируем его
-                    if not needs_encoding and any(char in decoded_href for char in [' ', ':', '/', '?', '&', '=']):
-                        encoded_href = quote(href_value)
-                        
-                        # Пересобираем параметры с закодированным href
-                        updated_params = []
-                        for key, values in params.items():
-                            for value in values:
-                                if key == "href":
-                                    updated_params.append(f"{key}={encoded_href}")
-                                else:
-                                    updated_params.append(f"{key}={value}")
-                        
-                        # Пересобираем диплинк
-                        deeplink = f"yandextaxi://{path_part}?{'&'.join(updated_params)}"
+                    # Пересобираем диплинк
+                    deeplink = f"yandextaxi://{before_href}href={encoded_href}"
                         
         except Exception as e:
             await message.answer("❌ Ошибка при обработке диплинка. Попробуй ещё раз:")
