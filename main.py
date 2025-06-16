@@ -78,15 +78,50 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
     
     # Параметры
     today = datetime.now().strftime('%Y%m%d')
+    campaign_value = f'{today}_bot'
+    adgroup_value = transliterate_to_latin(user_data.get('campaign_name', ''))
+    
     params = {
         'adj_t': '1md8ai4n_1mztz3nz',
-        'adj_campaign': f'{today}_bot',
-        'adj_adgroup': transliterate_to_latin(user_data.get('campaign_name', ''))
+        'adj_campaign': campaign_value,
+        'adj_adgroup': adgroup_value
     }
     
-    # Добавляем fallback если есть
+    # Обрабатываем desktop_url если есть
     if user_data.get('desktop_url'):
-        params['adj_fallback'] = quote(user_data['desktop_url'])
+        desktop_url = user_data['desktop_url']
+        
+        # Разбираем URL
+        parsed_url = urlparse(desktop_url)
+        query_params = parse_qs(parsed_url.query, keep_blank_values=True)
+        
+        # Добавляем utm_source если отсутствует
+        if 'utm_source' not in query_params:
+            query_params['utm_source'] = [campaign_value]
+        
+        # Добавляем utm_campaign если отсутствует  
+        if 'utm_campaign' not in query_params:
+            query_params['utm_campaign'] = [adgroup_value]
+        
+        # Пересобираем query string
+        query_parts = []
+        for key, values in query_params.items():
+            for value in values:
+                if value:
+                    query_parts.append(f"{key}={quote(str(value))}")
+                else:
+                    query_parts.append(key)
+        
+        # Пересобираем URL
+        if query_parts:
+            new_query = '&'.join(query_parts)
+            desktop_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}?{new_query}"
+            if parsed_url.fragment:
+                desktop_url += f"#{parsed_url.fragment}"
+        
+        # Добавляем fallback и redirect_macos параметры
+        params['adj_fallback'] = quote(desktop_url)
+        params['adj_redirect_macos'] = quote(desktop_url)
     
     # Строим URL
     param_string = '&'.join([f'{k}={v}' for k, v in params.items()])
