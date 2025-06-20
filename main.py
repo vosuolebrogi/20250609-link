@@ -27,6 +27,8 @@ dp = Dispatcher(bot, storage=storage)
 
 
 class LinkBuilder(StatesGroup):
+    waiting_for_reattribution = State()
+    waiting_for_temporary_attribution = State()
     waiting_for_campaign = State()
     waiting_for_action_type = State()
     waiting_for_service = State()
@@ -85,8 +87,21 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
     campaign_value = f'{today}_bot'
     adgroup_value = transliterate_to_latin(user_data.get('campaign_name', ''))
     
+    # Определяем adj_t на основе выбранных опций
+    reattribution = user_data.get('reattribution', 'Неактивных')
+    temporary_attribution = user_data.get('temporary_attribution', 'Нет')
+    
+    adj_t_map = {
+        ('Всех', 'Нет'): '1pj8ktrc_1pksjytf',
+        ('Неактивных', 'Нет'): '1md8ai4n_1mztz3nz',
+        ('Всех', '30 дней'): '1p5j0f1z_1pk9ju0y',
+        ('Неактивных', '30 дней'): '1pi2vjj3_1ppvctfa'
+    }
+    
+    adj_t = adj_t_map.get((reattribution, temporary_attribution), '1md8ai4n_1mztz3nz')
+    
     params = {
-        'adj_t': '1md8ai4n_1mztz3nz',
+        'adj_t': adj_t,
         'adj_campaign': campaign_value,
         'adj_adgroup': adgroup_value
     }
@@ -140,9 +155,54 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
     """Обработка команды /start"""
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    keyboard.add(KeyboardButton("Всех"))
+    keyboard.add(KeyboardButton("Неактивных"))
+    
     await message.answer(
         "🚗 Привет! Я помогу тебе создать ссылку на приложение Яндекс Go.\n\n"
-        "Для начала, опиши одним словом название кампании для которой делается ссылка:"
+        "❓ Нужно ли реатрибуцировать всех пользователей или только неактивных?",
+        reply_markup=keyboard
+    )
+    await LinkBuilder.waiting_for_reattribution.set()
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_reattribution)
+async def process_reattribution(message: types.Message, state: FSMContext):
+    """Обработка выбора реатрибуции"""
+    reattribution = message.text.strip()
+    
+    if reattribution not in ["Всех", "Неактивных"]:
+        await message.answer("❌ Пожалуйста, выбери один из предложенных вариантов.")
+        return
+    
+    await state.update_data(reattribution=reattribution)
+    
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    keyboard.add(KeyboardButton("Нет"))
+    keyboard.add(KeyboardButton("30 дней"))
+    
+    await message.answer(
+        "⏰ Нужна ли временная атрибуция, после которой пользователи атрибуцируются в предыдущий трекер?",
+        reply_markup=keyboard
+    )
+    await LinkBuilder.waiting_for_temporary_attribution.set()
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_temporary_attribution)
+async def process_temporary_attribution(message: types.Message, state: FSMContext):
+    """Обработка выбора временной атрибуции"""
+    temporary_attribution = message.text.strip()
+    
+    if temporary_attribution not in ["Нет", "30 дней"]:
+        await message.answer("❌ Пожалуйста, выбери один из предложенных вариантов.")
+        return
+    
+    await state.update_data(temporary_attribution=temporary_attribution)
+    
+    await message.answer(
+        "📝 Теперь опиши одним словом название кампании для которой делается ссылка:",
+        reply_markup=ReplyKeyboardRemove()
     )
     await LinkBuilder.waiting_for_campaign.set()
 
