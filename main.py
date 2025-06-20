@@ -578,12 +578,38 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     encoded_link = quote(final_link)
     shortener_url = f"https://go-admin-frontend.taxi.tst.yandex-team.ru/adjust?url={encoded_link}"
     
+    # Создаем ссылку на статистику
+    today = datetime.now().strftime('%Y%m%d')
+    campaign_value = f'{today}_bot'
+    adgroup_value = transliterate_to_latin(user_data.get('campaign_name', ''))
+    
+    # Кодируем параметры для ссылки на статистику
+    encoded_campaign = quote(f'"{campaign_value}"')
+    encoded_adgroup = quote(f'"{adgroup_value}"')
+    
+    stats_url = (
+        "https://suite.adjust.com/datascape/report?"
+        "app_token__in=%2255ug2ntb3uzf%22%2C%22cs75zaz26h8x%22&"
+        "utc_offset=%2B00%3A00&reattributed=all&attribution_source=dynamic&"
+        "attribution_type=all&ad_spend_mode=network&date_period=-7d%3A-1d&"
+        "cohort_maturity=immature&sandbox=false&assisting_attribution_type=all&"
+        "ironsource_mode=ironsource&digital_turbine_mode=digital_turbine&"
+        "network__in=%22Promo+%28True+Link%29%22%2C%22Promo+Instant+Reattribution+%28True+Link%29%22%2C%22Promo+Instant+Reattribution+Temporary+30+%28True+Link%29%22%2C%22Promo+Temporary+30+%28True+Link%29%22&"
+        "dimensions=channel%2Ccampaign_network%2Cadgroup_network&"
+        "metrics=attribution_clicks%2Cinstalls%2Creattributions%2Csuccess_first_order_events&"
+        "sort=-installs&installs__column_heatmap=%23C19CFF&is_report_setup_open=true&"
+        f"campaign_network__in__column={encoded_campaign}&"
+        f"adgroup_network__in__column={encoded_adgroup}"
+    )
+    
     await message.answer(
         f"🎉 Готово! Твоя ссылка:\n\n"
         f"`{final_link}`\n\n"
         f"📋 Скопируй ссылку выше и используй в своей кампании!\n\n"
         f"📱 Для использования в SMS или QR-кодах рекомендуется сократить ссылку:\n"
         f"[Перейти к сокращению ссылки]({shortener_url})\n\n"
+        f"📊 Для просмотра статистики переходов и установок:\n"
+        f"[Открыть статистику в Adjust]({stats_url})\n\n"
         f"Чтобы создать новую ссылку, отправь /start",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode='Markdown'
