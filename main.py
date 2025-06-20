@@ -237,15 +237,14 @@ async def process_campaign(message: types.Message, state: FSMContext):
     # Создаем клавиатуру для выбора действия
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
     keyboard.add(KeyboardButton("Просто открыть приложение"))
-    keyboard.add(KeyboardButton("Диплинк сервиса"))
-    keyboard.add(KeyboardButton("Диплинк маршрута"))
+    keyboard.add(KeyboardButton("Сервис"))
     keyboard.add(KeyboardButton("Промокод"))
     keyboard.add(KeyboardButton("Тариф"))
     keyboard.add(KeyboardButton("Баннер"))
     keyboard.add(KeyboardButton("Свой диплинк"))
     
     await message.answer(
-        "✅ Отлично! Теперь выбери, что должно происходить при клике на ссылку:",
+        "✅ Отлично! Теперь выбери, что должно открываться при клике, если приложение уже есть на устройстве:",
         reply_markup=keyboard
     )
     await LinkBuilder.waiting_for_action_type.set()
@@ -260,24 +259,19 @@ async def process_action_type(message: types.Message, state: FSMContext):
         await state.update_data(deeplink="yandextaxi://")
         await ask_desktop_url(message, state)
         
-    elif action == "Диплинк сервиса":
+    elif action == "Сервис":
         keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
         keyboard.add(KeyboardButton("Еда"))
         keyboard.add(KeyboardButton("Лавка"))
         keyboard.add(KeyboardButton("Драйв"))
+        keyboard.add(KeyboardButton("Маркет"))
+        keyboard.add(KeyboardButton("Самокаты"))
         
         await message.answer(
             "Выбери сервис:",
             reply_markup=keyboard
         )
         await LinkBuilder.waiting_for_service.set()
-        
-    elif action == "Диплинк маршрута":
-        await message.answer(
-            "🚩 Введи адрес отправления (или нажми 'Пропустить', если не нужен):",
-            reply_markup=ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(KeyboardButton("Пропустить"))
-        )
-        await LinkBuilder.waiting_for_route_start.set()
         
     elif action == "Промокод":
         await message.answer(
@@ -324,21 +318,33 @@ async def process_action_type(message: types.Message, state: FSMContext):
 @dp.message_handler(state=LinkBuilder.waiting_for_service)
 async def process_service(message: types.Message, state: FSMContext):
     """Обработка выбора сервиса"""
-    service_map = {
+    # Специальные диплинки для некоторых сервисов
+    special_service_map = {
+        "Самокаты": "yandextaxi://scooters"
+    }
+    
+    # Стандартные сервисы через external
+    standard_service_map = {
         "Еда": "eats",
         "Лавка": "grocery", 
-        "Драйв": "drive"
+        "Драйв": "drive",
+        "Маркет": "market"
     }
     
     service_name = message.text.strip()
-    if service_name not in service_map:
+    
+    # Проверяем специальные диплинки
+    if service_name in special_service_map:
+        deeplink = special_service_map[service_name]
+    # Проверяем стандартные сервисы
+    elif service_name in standard_service_map:
+        service_code = standard_service_map[service_name]
+        deeplink = f"yandextaxi://external?service={service_code}"
+    else:
         await message.answer("❌ Пожалуйста, выбери один из предложенных сервисов.")
         return
     
-    service_code = service_map[service_name]
-    deeplink = f"yandextaxi://external?service={service_code}"
     await state.update_data(deeplink=deeplink)
-    
     await ask_desktop_url(message, state)
 
 
@@ -369,18 +375,36 @@ async def process_route_end(message: types.Message, state: FSMContext):
     
     user_data = await state.get_data()
     start_address = user_data.get('start_address', '')
+    base_tariff_deeplink = user_data.get('base_tariff_deeplink', '')
     
-    # Формируем диплинк маршрута
-    params = []
+    # Формируем параметры маршрута
+    route_params = []
     if start_address:
-        params.append(f"start={quote(start_address)}")
+        route_params.append(f"start={quote(start_address)}")
     if end_address:
-        params.append(f"end={quote(end_address)}")
+        route_params.append(f"end={quote(end_address)}")
     
-    if params:
-        deeplink = f"yandextaxi://route?{'&'.join(params)}"
+    # Объединяем тарифные и маршрутные параметры
+    if base_tariff_deeplink:
+        if base_tariff_deeplink == "yandextaxi://intercity_main":
+            # Для межгорода используем специальную логику
+            if route_params:
+                deeplink = f"yandextaxi://intercity_main?{'&'.join(route_params)}"
+            else:
+                deeplink = base_tariff_deeplink
+        else:
+            # Для остальных тарифов добавляем маршрутные параметры
+            if route_params:
+                separator = "&" if "?" in base_tariff_deeplink else "?"
+                deeplink = f"{base_tariff_deeplink}{separator}{'&'.join(route_params)}"
+            else:
+                deeplink = base_tariff_deeplink
     else:
-        deeplink = "yandextaxi://route"
+        # Если нет базового тарифного диплинка (не должно происходить в новой логике)
+        if route_params:
+            deeplink = f"yandextaxi://route?{'&'.join(route_params)}"
+        else:
+            deeplink = "yandextaxi://route"
     
     await state.update_data(deeplink=deeplink)
     await ask_desktop_url(message, state)
@@ -472,10 +496,14 @@ async def process_tariff(message: types.Message, state: FSMContext):
         await message.answer("❌ Пожалуйста, выбери один из предложенных тарифов.")
         return
     
-    deeplink = tariff_map[tariff_name]
-    await state.update_data(deeplink=deeplink)
+    base_deeplink = tariff_map[tariff_name]
+    await state.update_data(base_tariff_deeplink=base_deeplink)
     
-    await ask_desktop_url(message, state)
+    await message.answer(
+        "🚩 Введи адрес отправления (или нажми 'Пропустить', если не нужен):",
+        reply_markup=ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(KeyboardButton("Пропустить"))
+    )
+    await LinkBuilder.waiting_for_route_start.set()
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_custom_tariff)
@@ -490,11 +518,16 @@ async def process_custom_tariff(message: types.Message, state: FSMContext):
     # URL-кодируем код тарифа
     encoded_tariff_code = quote(tariff_code)
     
-    # Формируем диплинк с кодом тарифа
-    deeplink = f"yandextaxi://route?tariffClass={encoded_tariff_code}"
+    # Формируем базовый диплинк с кодом тарифа
+    base_deeplink = f"yandextaxi://route?tariffClass={encoded_tariff_code}"
     
-    await state.update_data(deeplink=deeplink)
-    await ask_desktop_url(message, state)
+    await state.update_data(base_tariff_deeplink=base_deeplink)
+    
+    await message.answer(
+        "🚩 Введи адрес отправления (или нажми 'Пропустить', если не нужен):",
+        reply_markup=ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(KeyboardButton("Пропустить"))
+    )
+    await LinkBuilder.waiting_for_route_start.set()
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_banner_id)
