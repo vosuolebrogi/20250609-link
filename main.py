@@ -33,6 +33,10 @@ class LinkBuilder(StatesGroup):
     waiting_for_route_start = State()
     waiting_for_route_end = State()
     waiting_for_custom_deeplink = State()
+    waiting_for_promo_code = State()
+    waiting_for_tariff = State()
+    waiting_for_custom_tariff = State()
+    waiting_for_banner_id = State()
     waiting_for_desktop_url = State()
 
 
@@ -159,6 +163,9 @@ async def process_campaign(message: types.Message, state: FSMContext):
     keyboard.add(KeyboardButton("Просто открыть приложение"))
     keyboard.add(KeyboardButton("Диплинк сервиса"))
     keyboard.add(KeyboardButton("Диплинк маршрута"))
+    keyboard.add(KeyboardButton("Промокод"))
+    keyboard.add(KeyboardButton("Тариф"))
+    keyboard.add(KeyboardButton("Баннер"))
     keyboard.add(KeyboardButton("Свой диплинк"))
     
     await message.answer(
@@ -195,6 +202,37 @@ async def process_action_type(message: types.Message, state: FSMContext):
             reply_markup=ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(KeyboardButton("Пропустить"))
         )
         await LinkBuilder.waiting_for_route_start.set()
+        
+    elif action == "Промокод":
+        await message.answer(
+            "🔗 Введи промокод:",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        await LinkBuilder.waiting_for_promo_code.set()
+        
+    elif action == "Тариф":
+        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        keyboard.add(KeyboardButton("Эконом"))
+        keyboard.add(KeyboardButton("Комфорт"))
+        keyboard.add(KeyboardButton("Комфорт+"))
+        keyboard.add(KeyboardButton("Бизнес"))
+        keyboard.add(KeyboardButton("Грузовой"))
+        keyboard.add(KeyboardButton("Детский"))
+        keyboard.add(KeyboardButton("Межгород"))
+        keyboard.add(KeyboardButton("Свой тариф"))
+        
+        await message.answer(
+            "🚗 Выбери тариф:",
+            reply_markup=keyboard
+        )
+        await LinkBuilder.waiting_for_tariff.set()
+        
+    elif action == "Баннер":
+        await message.answer(
+            "🎨 Введи ID баннера:",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        await LinkBuilder.waiting_for_banner_id.set()
         
     elif action == "Свой диплинк":
         await message.answer(
@@ -312,6 +350,96 @@ async def process_custom_deeplink(message: types.Message, state: FSMContext):
     await ask_desktop_url(message, state)
 
 
+@dp.message_handler(state=LinkBuilder.waiting_for_promo_code)
+async def process_promo_code(message: types.Message, state: FSMContext):
+    """Обработка промокода"""
+    promo_code = message.text.strip()
+    
+    if not promo_code:
+        await message.answer("❌ Промокод не может быть пустым. Попробуй ещё раз:")
+        return
+    
+    # URL-кодируем промокод
+    encoded_promo_code = quote(promo_code)
+    
+    # Формируем диплинк с промокодом
+    deeplink = f"yandextaxi://addpromocode?code={encoded_promo_code}"
+    
+    await state.update_data(deeplink=deeplink)
+    await ask_desktop_url(message, state)
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_tariff)
+async def process_tariff(message: types.Message, state: FSMContext):
+    """Обработка выбора тарифа"""
+    tariff_map = {
+        "Эконом": "yandextaxi://route?tariffClass=econom",
+        "Комфорт": "yandextaxi://route?tariffClass=comfortplus",
+        "Комфорт+": "yandextaxi://route?tariffClass=business",
+        "Бизнес": "yandextaxi://route?tariffClass=vip&vertical=ultima",
+        "Грузовой": "yandextaxi://route?tariffClass=cargo",
+        "Детский": "yandextaxi://route?tariffClass=child_tariff",
+        "Межгород": "yandextaxi://intercity_main"
+    }
+    
+    tariff_name = message.text.strip()
+    
+    if tariff_name == "Свой тариф":
+        await message.answer(
+            "📝 Введи код тарифа:",
+            reply_markup=ReplyKeyboardRemove()
+        )
+        await LinkBuilder.waiting_for_custom_tariff.set()
+        return
+    
+    if tariff_name not in tariff_map:
+        await message.answer("❌ Пожалуйста, выбери один из предложенных тарифов.")
+        return
+    
+    deeplink = tariff_map[tariff_name]
+    await state.update_data(deeplink=deeplink)
+    
+    await ask_desktop_url(message, state)
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_custom_tariff)
+async def process_custom_tariff(message: types.Message, state: FSMContext):
+    """Обработка кода пользовательского тарифа"""
+    tariff_code = message.text.strip()
+    
+    if not tariff_code:
+        await message.answer("❌ Код тарифа не может быть пустым. Попробуй ещё раз:")
+        return
+    
+    # URL-кодируем код тарифа
+    encoded_tariff_code = quote(tariff_code)
+    
+    # Формируем диплинк с кодом тарифа
+    deeplink = f"yandextaxi://route?tariffClass={encoded_tariff_code}"
+    
+    await state.update_data(deeplink=deeplink)
+    await ask_desktop_url(message, state)
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_banner_id)
+async def process_banner_id(message: types.Message, state: FSMContext):
+    """Обработка ID баннера"""
+    banner_id = message.text.strip()
+    
+    if not banner_id:
+        await message.answer("❌ ID баннера не может быть пустым. Попробуй ещё раз:")
+        return
+    
+    # URL-кодируем ID баннера
+    encoded_banner_id = quote(banner_id)
+    
+    # Формируем диплинк с ID баннера
+    deeplink = f"yandextaxi://banner?id={encoded_banner_id}"
+    
+    await state.update_data(deeplink=deeplink)
+    await ask_desktop_url(message, state)
+
+
 async def ask_desktop_url(message: types.Message, state: FSMContext):
     """Запрос URL для десктопа"""
     await message.answer(
@@ -339,7 +467,7 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     
     # Создаём ссылку для сокращения
     encoded_link = quote(final_link)
-    shortener_url = f"https://go-admin-frontend.taxi.yandex-team.ru/adjust?url={encoded_link}"
+    shortener_url = f"https://go-admin-frontend.taxi.tst.yandex-team.ru/adjust?url={encoded_link}"
     
     await message.answer(
         f"🎉 Готово! Твоя ссылка:\n\n"
