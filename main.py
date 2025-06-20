@@ -88,14 +88,14 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
     adgroup_value = transliterate_to_latin(user_data.get('campaign_name', ''))
     
     # Определяем adj_t на основе выбранных опций
-    reattribution = user_data.get('reattribution', 'Неактивных')
-    temporary_attribution = user_data.get('temporary_attribution', 'Нет')
+    reattribution = user_data.get('reattribution', 'Только неактивных от 30 дней')
+    temporary_attribution = user_data.get('temporary_attribution', 'Без ограничений')
     
     adj_t_map = {
-        ('Всех', 'Нет'): '1pj8ktrc_1pksjytf',
-        ('Неактивных', 'Нет'): '1md8ai4n_1mztz3nz',
-        ('Всех', '30 дней'): '1p5j0f1z_1pk9ju0y',
-        ('Неактивных', '30 дней'): '1pi2vjj3_1ppvctfa'
+        ('Да', 'Без ограничений'): '1pj8ktrc_1pksjytf',
+        ('Только неактивных от 30 дней', 'Без ограничений'): '1md8ai4n_1mztz3nz',
+        ('Да', '30 дней'): '1p5j0f1z_1pk9ju0y',
+        ('Только неактивных от 30 дней', '30 дней'): '1pi2vjj3_1ppvctfa'
     }
     
     adj_t = adj_t_map.get((reattribution, temporary_attribution), '1md8ai4n_1mztz3nz')
@@ -156,12 +156,12 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
 async def cmd_start(message: types.Message):
     """Обработка команды /start"""
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(KeyboardButton("Всех"))
-    keyboard.add(KeyboardButton("Неактивных"))
+    keyboard.add(KeyboardButton("Да"))
+    keyboard.add(KeyboardButton("Только неактивных от 30 дней"))
     
     await message.answer(
         "🚗 Привет! Я помогу тебе создать ссылку на приложение Яндекс Go.\n\n"
-        "❓ Нужно ли реатрибуцировать всех пользователей или только неактивных?",
+        "❓ Если у пользователя уже было приложение и он активен, нужно ли его атрибуцировать к этой ссылке?",
         reply_markup=keyboard
     )
     await LinkBuilder.waiting_for_reattribution.set()
@@ -172,18 +172,26 @@ async def process_reattribution(message: types.Message, state: FSMContext):
     """Обработка выбора реатрибуции"""
     reattribution = message.text.strip()
     
-    if reattribution not in ["Всех", "Неактивных"]:
-        await message.answer("❌ Пожалуйста, выбери один из предложенных вариантов.")
+    if reattribution not in ["Да", "Только неактивных от 30 дней"]:
+        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        keyboard.add(KeyboardButton("Да"))
+        keyboard.add(KeyboardButton("Только неактивных от 30 дней"))
+        
+        await message.answer(
+            "❌ Пожалуйста, используй кнопки для ответа.\n\n"
+            "❓ Если у пользователя уже было приложение и он активен, нужно ли его атрибуцировать к этой ссылке?",
+            reply_markup=keyboard
+        )
         return
     
     await state.update_data(reattribution=reattribution)
     
     keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(KeyboardButton("Нет"))
+    keyboard.add(KeyboardButton("Без ограничений"))
     keyboard.add(KeyboardButton("30 дней"))
     
     await message.answer(
-        "⏰ Нужна ли временная атрибуция, после которой пользователи атрибуцируются в предыдущий трекер?",
+        "⏰ Сколько пользователь должен оставаться в трекере после последнего контакта?",
         reply_markup=keyboard
     )
     await LinkBuilder.waiting_for_temporary_attribution.set()
@@ -194,8 +202,16 @@ async def process_temporary_attribution(message: types.Message, state: FSMContex
     """Обработка выбора временной атрибуции"""
     temporary_attribution = message.text.strip()
     
-    if temporary_attribution not in ["Нет", "30 дней"]:
-        await message.answer("❌ Пожалуйста, выбери один из предложенных вариантов.")
+    if temporary_attribution not in ["Без ограничений", "30 дней"]:
+        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+        keyboard.add(KeyboardButton("Без ограничений"))
+        keyboard.add(KeyboardButton("30 дней"))
+        
+        await message.answer(
+            "❌ Пожалуйста, используй кнопки для ответа.\n\n"
+            "⏰ Сколько пользователь должен оставаться в трекере после последнего контакта?",
+            reply_markup=keyboard
+        )
         return
     
     await state.update_data(temporary_attribution=temporary_attribution)
