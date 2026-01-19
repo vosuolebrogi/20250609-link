@@ -129,7 +129,7 @@ def keyboard_skip_back() -> ReplyKeyboardMarkup:
 
 
 def keyboard_eats_options() -> ReplyKeyboardMarkup:
-    return make_keyboard(["Главная Еды", "Магазин", "Ресторан"], include_back=True)
+    return make_keyboard(["Главная Еды", "Магазин"], include_back=True)
 
 
 def get_app_name_or_default(app_name: Optional[str]) -> str:
@@ -205,6 +205,8 @@ def get_action_type_options(app_name: Optional[str]) -> List[str]:
     app_name = get_app_name_or_default(app_name)
     if app_name == GO_APP_NAME:
         return ACTION_TYPE_OPTIONS
+    if app_name == "Еда":
+        return [OPEN_APP_OTHER, "Ресторан", "Свой диплинк"]
     return [OPEN_APP_OTHER, "Свой диплинк"]
 
 
@@ -634,6 +636,9 @@ async def process_action_type(message: types.Message, state: FSMContext):
     elif action == "Баннер":
         await prompt_banner_id(message)
         
+    elif action == "Ресторан":
+        await prompt_eats_restaurant_url(message)
+
     elif action == "Свой диплинк":
         await prompt_custom_deeplink(message, state)
 
@@ -695,10 +700,6 @@ async def process_eats_option(message: types.Message, state: FSMContext):
 
     if eats_option == "Магазин":
         await prompt_eats_shop_url(message)
-        return
-    
-    if eats_option == "Ресторан":
-        await prompt_eats_restaurant_url(message)
         return
 
     await message.answer(
@@ -776,7 +777,7 @@ async def process_eats_restaurant_url(message: types.Message, state: FSMContext)
     restaurant_url = message.text.strip()
 
     if restaurant_url == BACK_BUTTON_TEXT:
-        await prompt_eats_option(message)
+        await prompt_action_type_with_state(message, state)
         return
 
     deeplink = build_eats_restaurant_deeplink(restaurant_url)
