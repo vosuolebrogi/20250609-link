@@ -240,7 +240,7 @@ def build_temp_attr_text() -> str:
 
 async def prompt_app(message: types.Message) -> None:
     await message.answer(
-        "📱 Привет! Для какого приложения нужно создать ссылку?",
+        "📱 Для какого приложения нужно создать ссылку?",
         reply_markup=keyboard_app()
     )
     await LinkBuilder.waiting_for_app.set()
@@ -1142,7 +1142,7 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
 async def handle_other_messages(message: types.Message):
     """Обработка прочих сообщений"""
     await message.answer(
-        "🤖 Привет! Чтобы создать ссылку, отправь команду /start"
+        "🤖 Чтобы создать ссылку, отправь команду /start"
     )
 
 
