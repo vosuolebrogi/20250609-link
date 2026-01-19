@@ -80,6 +80,8 @@ class LinkBuilder(StatesGroup):
     waiting_for_campaign = State()
     waiting_for_action_type = State()
     waiting_for_service = State()
+    waiting_for_eats_option = State()
+    waiting_for_eats_shop_url = State()
     waiting_for_route_start = State()
     waiting_for_route_end = State()
     waiting_for_custom_deeplink = State()
@@ -100,7 +102,7 @@ def make_keyboard(buttons=None, include_back=False) -> ReplyKeyboardMarkup:
 
 
 def keyboard_app() -> ReplyKeyboardMarkup:
-    return make_keyboard(APP_OPTIONS, include_back=True)
+    return make_keyboard(APP_OPTIONS, include_back=False)
 
 
 def keyboard_reattribution() -> ReplyKeyboardMarkup:
@@ -125,6 +127,10 @@ def keyboard_back_only() -> ReplyKeyboardMarkup:
 
 def keyboard_skip_back() -> ReplyKeyboardMarkup:
     return make_keyboard(["Пропустить"], include_back=True)
+
+
+def keyboard_eats_options() -> ReplyKeyboardMarkup:
+    return make_keyboard(["Главная Еды", "Магазин"], include_back=True)
 
 
 def get_app_name_or_default(app_name: Optional[str]) -> str:
@@ -241,6 +247,22 @@ async def prompt_service(message: types.Message) -> None:
         reply_markup=keyboard_service()
     )
     await LinkBuilder.waiting_for_service.set()
+
+
+async def prompt_eats_option(message: types.Message) -> None:
+    await message.answer(
+        "🍔 Что открыть в Еде?",
+        reply_markup=keyboard_eats_options()
+    )
+    await LinkBuilder.waiting_for_eats_option.set()
+
+
+async def prompt_eats_shop_url(message: types.Message) -> None:
+    await message.answer(
+        "🛒 Введи ссылку на магазин (eda.yandex или eats.yandex.com, и в пути retail):",
+        reply_markup=keyboard_back_only()
+    )
+    await LinkBuilder.waiting_for_eats_shop_url.set()
 
 
 async def prompt_tariff(message: types.Message) -> None:
@@ -561,6 +583,10 @@ async def process_service(message: types.Message, state: FSMContext):
         await prompt_action_type_with_state(message, state)
         return
 
+    if service_name == "Еда":
+        await prompt_eats_option(message)
+        return
+
     # Проверяем специальные диплинки
     if service_name in special_service_map:
         deeplink = special_service_map[service_name]
@@ -572,6 +598,72 @@ async def process_service(message: types.Message, state: FSMContext):
         await message.answer("❌ Пожалуйста, выбери один из предложенных сервисов.")
         return
     
+    await state.update_data(deeplink=deeplink)
+    await ask_desktop_url(message, state)
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_eats_option)
+async def process_eats_option(message: types.Message, state: FSMContext):
+    """Обработка выбора опции Еды"""
+    eats_option = message.text.strip()
+
+    if eats_option == BACK_BUTTON_TEXT:
+        await prompt_service(message)
+        return
+
+    if eats_option == "Главная Еды":
+        await state.update_data(deeplink="yandextaxi://external?service=eats")
+        await ask_desktop_url(message, state)
+        return
+
+    if eats_option == "Магазин":
+        await prompt_eats_shop_url(message)
+        return
+
+    await message.answer(
+        "❌ Пожалуйста, выбери один из предложенных вариантов.",
+        reply_markup=keyboard_eats_options()
+    )
+
+
+def build_eats_shop_deeplink(shop_url: str) -> Optional[str]:
+    try:
+        parsed = urlparse(shop_url)
+    except Exception:
+        return None
+
+    host = parsed.netloc.lower()
+    if not (host.startswith("eda.yandex") or host.startswith("eats.yandex.com")):
+        return None
+
+    path = parsed.path or ""
+    if "retail" not in path:
+        return None
+
+    href = path.lstrip("/")
+    if parsed.query:
+        href = f"{href}?{parsed.query}"
+
+    return f"yandextaxi://external?service=eats&href={quote(href)}"
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_eats_shop_url)
+async def process_eats_shop_url(message: types.Message, state: FSMContext):
+    """Обработка ссылки на магазин Еды"""
+    shop_url = message.text.strip()
+
+    if shop_url == BACK_BUTTON_TEXT:
+        await prompt_eats_option(message)
+        return
+
+    deeplink = build_eats_shop_deeplink(shop_url)
+    if not deeplink:
+        await message.answer(
+            "❌ Нужна ссылка на магазин Еды: домен eda.yandex или eats.yandex.com, "
+            "и в пути должен быть retail. Попробуй ещё раз:"
+        )
+        return
+
     await state.update_data(deeplink=deeplink)
     await ask_desktop_url(message, state)
 
