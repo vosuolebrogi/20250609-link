@@ -28,13 +28,12 @@ dp = Dispatcher(bot, storage=storage)
 BACK_BUTTON_TEXT = "Назад"
 GO_APP_NAME = "Go"
 OPEN_APP_GO = "Просто открыть приложение"
-OPEN_APP_OTHER = "Открыть приложение"
+OPEN_APP_OTHER = "Просто открыть приложение"
 
 APP_ORDER = [
     "Драйв",
     "Еда",
     "Про",
-    "Dodotaxi",
     "Go",
     "Yango",
     "Yango Pro"
@@ -43,7 +42,6 @@ APP_CATALOG = {
     "Драйв": {"scheme": "yandexdrive://", "base_url": "https://drive.go.link/"},
     "Еда": {"scheme": "eda.yandex://", "base_url": "https://plms.adj.st/"},
     "Про": {"scheme": "taximeter://", "base_url": "https://lecj.adj.st/"},
-    "Dodotaxi": {"scheme": "dodotaxi-rider://", "base_url": "https://xkc2.adj.st/"},
     "Go": {"scheme": "yandextaxi://", "base_url": "https://yandex.go.link/"},
     "Yango": {"scheme": "yandexyango://", "base_url": "https://yango.go.link/"},
     "Yango Pro": {"scheme": "taximeter://", "base_url": "https://ubq5.adj.st/"}
@@ -82,6 +80,7 @@ class LinkBuilder(StatesGroup):
     waiting_for_service = State()
     waiting_for_eats_option = State()
     waiting_for_eats_shop_url = State()
+    waiting_for_eats_restaurant_url = State()
     waiting_for_route_start = State()
     waiting_for_route_end = State()
     waiting_for_custom_deeplink = State()
@@ -130,7 +129,7 @@ def keyboard_skip_back() -> ReplyKeyboardMarkup:
 
 
 def keyboard_eats_options() -> ReplyKeyboardMarkup:
-    return make_keyboard(["Главная Еды", "Магазин"], include_back=True)
+    return make_keyboard(["Главная Еды", "Магазин", "Ресторан"], include_back=True)
 
 
 def get_app_name_or_default(app_name: Optional[str]) -> str:
@@ -157,6 +156,41 @@ def get_adj_t_map(app_name: Optional[str]) -> Dict[tuple, str]:
             ('Только неактивных от 30 дней', 'Без ограничений'): '1md8ai4n_1mztz3nz',
             ('Да', '30 дней'): '1p5j0f1z_1pk9ju0y',
             ('Только неактивных от 30 дней', '30 дней'): '1pi2vjj3_1ppvctfa'
+        }
+    if app_name == "Драйв":
+        return {
+            ('Только неактивных от 30 дней', 'Без ограничений'): '1w1fyjuh',
+            ('Только неактивных от 30 дней', '30 дней'): '1w6rk3g5',
+            ('Да', 'Без ограничений'): '1w1h2sce',
+            ('Да', '30 дней'): '1w1k1t8b'
+        }
+    if app_name == "Еда":
+        return {
+            ('Да', 'Без ограничений'): '1wj02w0e_1woudcyr',
+            ('Только неактивных от 30 дней', 'Без ограничений'): '1w72129e_1ww1am8e',
+            ('Да', '30 дней'): '1w1uhauh_1w3dtcvs',
+            ('Только неактивных от 30 дней', '30 дней'): '1wwnx9c4_1wybzoum'
+        }
+    if app_name == "Про":
+        return {
+            ('Только неактивных от 30 дней', 'Без ограничений'): '1w1w0cie_1wf70eky',
+            ('Только неактивных от 30 дней', '30 дней'): '1whu80dy_1wtdlfwn',
+            ('Да', 'Без ограничений'): '1w7uoyoq_1wsa2db8',
+            ('Да', '30 дней'): '1w7ztrws_1wqmugs1'
+        }
+    if app_name == "Yango":
+        return {
+            ('Только неактивных от 30 дней', 'Без ограничений'): '1wrqmlfd_1wtbr2vt',
+            ('Только неактивных от 30 дней', '30 дней'): '1w3dkzxf_1wksmxnr',
+            ('Да', 'Без ограничений'): '1wlyrbe7_1woa6n8p',
+            ('Да', '30 дней'): '1w6zxhcl_1wfkbjtw'
+        }
+    if app_name == "Yango Pro":
+        return {
+            ('Только неактивных от 30 дней', 'Без ограничений'): '1wcen01x_1wh11pd5',
+            ('Только неактивных от 30 дней', '30 дней'): '1w59mp9k_1wkp0jy5',
+            ('Да', 'Без ограничений'): '1w31vlxu_1w3aa34h',
+            ('Да', '30 дней'): '1wxd0aln_1wzdqopt'
         }
     # Заглушки для трекеров остальных приложений — будут заменены позже
     return {
@@ -265,6 +299,14 @@ async def prompt_eats_shop_url(message: types.Message) -> None:
     await LinkBuilder.waiting_for_eats_shop_url.set()
 
 
+async def prompt_eats_restaurant_url(message: types.Message) -> None:
+    await message.answer(
+        "🍽 Введи ссылку на ресторан (eda.yandex и в пути /r/):",
+        reply_markup=keyboard_back_only()
+    )
+    await LinkBuilder.waiting_for_eats_restaurant_url.set()
+
+
 async def prompt_tariff(message: types.Message) -> None:
     await message.answer(
         "🚗 Выбери тариф:",
@@ -353,6 +395,36 @@ def is_valid_url(url: str) -> bool:
         return False
 
 
+def normalize_desktop_url(desktop_url: Optional[str], campaign_value: str, adgroup_value: str) -> Optional[str]:
+    if not desktop_url:
+        return None
+
+    parsed_url = urlparse(desktop_url)
+    query_params = parse_qs(parsed_url.query, keep_blank_values=True)
+
+    if 'utm_source' not in query_params:
+        query_params['utm_source'] = [campaign_value]
+
+    if 'utm_campaign' not in query_params:
+        query_params['utm_campaign'] = [adgroup_value]
+
+    query_parts = []
+    for key, values in query_params.items():
+        for value in values:
+            if value:
+                query_parts.append(f"{key}={quote(str(value))}")
+            else:
+                query_parts.append(key)
+
+    if query_parts:
+        new_query = '&'.join(query_parts)
+        desktop_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}?{new_query}"
+        if parsed_url.fragment:
+            desktop_url += f"#{parsed_url.fragment}"
+
+    return desktop_url
+
+
 def build_final_link(user_data: Dict[str, Any]) -> str:
     """Построение финальной ссылки"""
     # Базовая часть ссылки
@@ -387,38 +459,8 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
     }
     
     # Обрабатываем desktop_url если есть
-    if user_data.get('desktop_url'):
-        desktop_url = user_data['desktop_url']
-        
-        # Разбираем URL
-        parsed_url = urlparse(desktop_url)
-        query_params = parse_qs(parsed_url.query, keep_blank_values=True)
-        
-        # Добавляем utm_source если отсутствует
-        if 'utm_source' not in query_params:
-            query_params['utm_source'] = [campaign_value]
-        
-        # Добавляем utm_campaign если отсутствует  
-        if 'utm_campaign' not in query_params:
-            query_params['utm_campaign'] = [adgroup_value]
-        
-        # Пересобираем query string
-        query_parts = []
-        for key, values in query_params.items():
-            for value in values:
-                if value:
-                    query_parts.append(f"{key}={quote(str(value))}")
-                else:
-                    query_parts.append(key)
-        
-        # Пересобираем URL
-        if query_parts:
-            new_query = '&'.join(query_parts)
-            desktop_url = f"{parsed_url.scheme}://{parsed_url.netloc}{parsed_url.path}?{new_query}"
-            if parsed_url.fragment:
-                desktop_url += f"#{parsed_url.fragment}"
-        
-        # Добавляем fallback и redirect_macos параметры
+    desktop_url = normalize_desktop_url(user_data.get('desktop_url'), campaign_value, adgroup_value)
+    if desktop_url:
         params['adj_fallback'] = quote(desktop_url)
         params['adj_redirect_macos'] = quote(desktop_url)
     
@@ -430,6 +472,41 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
     final_url = f"{base_url}{deeplink}{separator}{param_string}"
     
     return final_url
+
+
+def build_adjust_app_link(user_data: Dict[str, Any]) -> str:
+    """Построение ссылки app.adjust.com"""
+    app_name = user_data.get('app', GO_APP_NAME)
+    scheme_prefix = get_app_scheme(app_name)
+    deeplink = user_data.get('deeplink', '')
+    if not deeplink.startswith(scheme_prefix):
+        deeplink = f"{scheme_prefix}{deeplink}"
+
+    today = datetime.now().strftime('%Y%m%d')
+    campaign_value = f'{today}_bot'
+    adgroup_value = transliterate_to_latin(user_data.get('campaign_name', ''))
+
+    reattribution = user_data.get('reattribution', 'Только неактивных от 30 дней')
+    temporary_attribution = user_data.get('temporary_attribution', 'Без ограничений')
+    adj_t_map = get_adj_t_map(app_name)
+    adj_t = adj_t_map.get(
+        (reattribution, temporary_attribution),
+        next(iter(adj_t_map.values()))
+    )
+
+    params = {
+        'campaign': campaign_value,
+        'adgroup': adgroup_value,
+        'deeplink': quote(deeplink)
+    }
+
+    desktop_url = normalize_desktop_url(user_data.get('desktop_url'), campaign_value, adgroup_value)
+    if desktop_url:
+        params['fallback'] = quote(desktop_url)
+        params['redirect_macos'] = quote(desktop_url)
+
+    param_string = '&'.join([f'{k}={v}' for k, v in params.items()])
+    return f"https://app.adjust.com/{adj_t}?{param_string}"
 
 
 @dp.message_handler(commands=['start'])
@@ -619,6 +696,10 @@ async def process_eats_option(message: types.Message, state: FSMContext):
     if eats_option == "Магазин":
         await prompt_eats_shop_url(message)
         return
+    
+    if eats_option == "Ресторан":
+        await prompt_eats_restaurant_url(message)
+        return
 
     await message.answer(
         "❌ Пожалуйста, выбери один из предложенных вариантов.",
@@ -647,6 +728,27 @@ def build_eats_shop_deeplink(shop_url: str) -> Optional[str]:
     return f"yandextaxi://external?service=eats&href={quote(href)}"
 
 
+def build_eats_restaurant_deeplink(restaurant_url: str) -> Optional[str]:
+    try:
+        parsed = urlparse(restaurant_url)
+    except Exception:
+        return None
+
+    host = parsed.netloc.lower()
+    if not host.startswith("eda.yandex"):
+        return None
+
+    if "/r/" not in parsed.path:
+        return None
+
+    query_params = parse_qs(parsed.query)
+    place_slug = query_params.get("placeSlug", [None])[0]
+    if not place_slug:
+        return None
+
+    return f"eda.yandex://restaurant/{place_slug}"
+
+
 @dp.message_handler(state=LinkBuilder.waiting_for_eats_shop_url)
 async def process_eats_shop_url(message: types.Message, state: FSMContext):
     """Обработка ссылки на магазин Еды"""
@@ -661,6 +763,27 @@ async def process_eats_shop_url(message: types.Message, state: FSMContext):
         await message.answer(
             "❌ Нужна ссылка на магазин Еды: домен eda.yandex или eats.yandex.com, "
             "и в пути должен быть retail. Попробуй ещё раз:"
+        )
+        return
+
+    await state.update_data(deeplink=deeplink)
+    await ask_desktop_url(message, state)
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_eats_restaurant_url)
+async def process_eats_restaurant_url(message: types.Message, state: FSMContext):
+    """Обработка ссылки на ресторан Еды"""
+    restaurant_url = message.text.strip()
+
+    if restaurant_url == BACK_BUTTON_TEXT:
+        await prompt_eats_option(message)
+        return
+
+    deeplink = build_eats_restaurant_deeplink(restaurant_url)
+    if not deeplink:
+        await message.answer(
+            "❌ Нужна ссылка на ресторан Еды: домен eda.yandex и в пути /r/, "
+            "и параметр placeSlug. Попробуй ещё раз:"
         )
         return
 
@@ -936,6 +1059,7 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     # Генерируем финальную ссылку
     user_data = await state.get_data()
     final_link = build_final_link(user_data)
+    alt_link = build_adjust_app_link(user_data)
     
     # Создаём ссылку для сокращения
     encoded_link = quote(final_link)
@@ -976,6 +1100,8 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     await message.answer(
         f"🎉 Готово! Твоя ссылка:\n\n"
         f"`{final_link}`\n\n"
+        f"🔗 Альтернативная ссылка:\n\n"
+        f"`{alt_link}`\n\n"
         f"📋 Скопируй ссылку выше и используй в своей кампании!\n\n"
         f"📱 Для использования в SMS или QR-кодах рекомендуется сократить ссылку:\n"
         f"[Перейти к сокращению ссылки]({shortener_url})\n\n"
