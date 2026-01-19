@@ -3,7 +3,7 @@ import re
 import logging
 from datetime import datetime
 from urllib.parse import quote, urlparse, parse_qs, unquote
-from typing import Dict, Any
+from typing import Dict, Any, Optional
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -25,8 +25,33 @@ bot = Bot(token=BOT_TOKEN)
 storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
+BACK_BUTTON_TEXT = "Назад"
+APP_OPTIONS = ["Яндекс Go", "Яндекс Еда"]
+REATTRIBUTION_OPTIONS = ["Да", "Только неактивных от 30 дней"]
+TEMP_ATTR_OPTIONS = ["Без ограничений", "30 дней"]
+ACTION_TYPE_OPTIONS = [
+    "Просто открыть приложение",
+    "Сервис",
+    "Промокод",
+    "Тариф",
+    "Баннер",
+    "Свой диплинк"
+]
+SERVICE_OPTIONS = ["Еда", "Лавка", "Драйв", "Маркет", "Самокаты"]
+TARIFF_OPTIONS = [
+    "Эконом",
+    "Комфорт",
+    "Комфорт+",
+    "Бизнес",
+    "Грузовой",
+    "Детский",
+    "Межгород",
+    "Свой тариф"
+]
+
 
 class LinkBuilder(StatesGroup):
+    waiting_for_app = State()
     waiting_for_reattribution = State()
     waiting_for_temporary_attribution = State()
     waiting_for_campaign = State()
@@ -40,6 +65,172 @@ class LinkBuilder(StatesGroup):
     waiting_for_custom_tariff = State()
     waiting_for_banner_id = State()
     waiting_for_desktop_url = State()
+
+
+def make_keyboard(buttons=None, include_back=False) -> ReplyKeyboardMarkup:
+    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
+    for button_text in buttons or []:
+        keyboard.add(KeyboardButton(button_text))
+    if include_back:
+        keyboard.add(KeyboardButton(BACK_BUTTON_TEXT))
+    return keyboard
+
+
+def keyboard_app() -> ReplyKeyboardMarkup:
+    return make_keyboard(APP_OPTIONS, include_back=True)
+
+
+def keyboard_reattribution() -> ReplyKeyboardMarkup:
+    return make_keyboard(REATTRIBUTION_OPTIONS, include_back=True)
+
+
+def keyboard_temp_attr() -> ReplyKeyboardMarkup:
+    return make_keyboard(TEMP_ATTR_OPTIONS, include_back=True)
+
+
+def keyboard_action_type() -> ReplyKeyboardMarkup:
+    return make_keyboard(ACTION_TYPE_OPTIONS, include_back=True)
+
+
+def keyboard_service() -> ReplyKeyboardMarkup:
+    return make_keyboard(SERVICE_OPTIONS, include_back=True)
+
+
+def keyboard_tariff() -> ReplyKeyboardMarkup:
+    return make_keyboard(TARIFF_OPTIONS, include_back=True)
+
+
+def keyboard_back_only() -> ReplyKeyboardMarkup:
+    return make_keyboard(include_back=True)
+
+
+def keyboard_skip_back() -> ReplyKeyboardMarkup:
+    return make_keyboard(["Пропустить"], include_back=True)
+
+
+def build_reattribution_text(app_name: Optional[str] = None) -> str:
+    base_question = (
+        "❓ Если у пользователя уже было приложение и он активен, нужно ли его "
+        "атрибуцировать к этой ссылке?"
+    )
+    if app_name:
+        return f"✅ Ок! Делаем ссылку для приложения {app_name}.\n\n{base_question}"
+    return base_question
+
+
+def build_temp_attr_text() -> str:
+    return "⏰ Сколько пользователь должен оставаться в трекере после последнего контакта?"
+
+
+async def prompt_app(message: types.Message) -> None:
+    await message.answer(
+        "📱 Привет! Для какого приложения нужно создать ссылку?",
+        reply_markup=keyboard_app()
+    )
+    await LinkBuilder.waiting_for_app.set()
+
+
+async def prompt_reattribution(
+    message: types.Message,
+    app_name: Optional[str] = None,
+    error_prefix: Optional[str] = None
+) -> None:
+    text = build_reattribution_text(app_name)
+    if error_prefix:
+        text = f"{error_prefix}\n\n{text}"
+    await message.answer(text, reply_markup=keyboard_reattribution())
+    await LinkBuilder.waiting_for_reattribution.set()
+
+
+async def prompt_temp_attr(
+    message: types.Message,
+    error_prefix: Optional[str] = None
+) -> None:
+    text = build_temp_attr_text()
+    if error_prefix:
+        text = f"{error_prefix}\n\n{text}"
+    await message.answer(text, reply_markup=keyboard_temp_attr())
+    await LinkBuilder.waiting_for_temporary_attribution.set()
+
+
+async def prompt_campaign(message: types.Message) -> None:
+    await message.answer(
+        "📝 Теперь опиши одним словом название кампании для которой делается ссылка:",
+        reply_markup=keyboard_back_only()
+    )
+    await LinkBuilder.waiting_for_campaign.set()
+
+
+async def prompt_action_type(message: types.Message) -> None:
+    await message.answer(
+        "✅ Отлично! Теперь выбери, что должно открываться при клике, если приложение уже есть на устройстве:",
+        reply_markup=keyboard_action_type()
+    )
+    await LinkBuilder.waiting_for_action_type.set()
+
+
+async def prompt_service(message: types.Message) -> None:
+    await message.answer(
+        "Выбери сервис:",
+        reply_markup=keyboard_service()
+    )
+    await LinkBuilder.waiting_for_service.set()
+
+
+async def prompt_tariff(message: types.Message) -> None:
+    await message.answer(
+        "🚗 Выбери тариф:",
+        reply_markup=keyboard_tariff()
+    )
+    await LinkBuilder.waiting_for_tariff.set()
+
+
+async def prompt_promo_code(message: types.Message) -> None:
+    await message.answer(
+        "🔗 Введи промокод:",
+        reply_markup=keyboard_back_only()
+    )
+    await LinkBuilder.waiting_for_promo_code.set()
+
+
+async def prompt_custom_tariff(message: types.Message) -> None:
+    await message.answer(
+        "📝 Введи код тарифа:",
+        reply_markup=keyboard_back_only()
+    )
+    await LinkBuilder.waiting_for_custom_tariff.set()
+
+
+async def prompt_banner_id(message: types.Message) -> None:
+    await message.answer(
+        "🎨 Введи ID баннера:",
+        reply_markup=keyboard_back_only()
+    )
+    await LinkBuilder.waiting_for_banner_id.set()
+
+
+async def prompt_custom_deeplink(message: types.Message) -> None:
+    await message.answer(
+        "🔗 Введи свой диплинк в формате yandextaxi://mydeeplink:",
+        reply_markup=keyboard_back_only()
+    )
+    await LinkBuilder.waiting_for_custom_deeplink.set()
+
+
+async def prompt_route_start(message: types.Message) -> None:
+    await message.answer(
+        "🚩 Введи адрес отправления (или нажми 'Пропустить', если не нужен):",
+        reply_markup=keyboard_skip_back()
+    )
+    await LinkBuilder.waiting_for_route_start.set()
+
+
+async def prompt_route_end(message: types.Message) -> None:
+    await message.answer(
+        "🎯 Введи адрес назначения (или нажми 'Пропустить', если не нужен):",
+        reply_markup=keyboard_skip_back()
+    )
+    await LinkBuilder.waiting_for_route_end.set()
 
 
 def transliterate_to_latin(text: str) -> str:
@@ -75,7 +266,30 @@ def is_valid_url(url: str) -> bool:
 def build_final_link(user_data: Dict[str, Any]) -> str:
     """Построение финальной ссылки"""
     # Базовая часть ссылки
-    base_url = "https://yandex.go.link/"
+    app_name = user_data.get('app', 'Яндекс Go')
+    app_config = {
+        "Яндекс Go": {
+            "base_url": "https://yandex.go.link/",
+            "adj_t_map": {
+                ('Да', 'Без ограничений'): '1pj8ktrc_1pksjytf',
+                ('Только неактивных от 30 дней', 'Без ограничений'): '1md8ai4n_1mztz3nz',
+                ('Да', '30 дней'): '1p5j0f1z_1pk9ju0y',
+                ('Только неактивных от 30 дней', '30 дней'): '1pi2vjj3_1ppvctfa'
+            }
+        },
+        "Яндекс Еда": {
+            "base_url": "https://eats.go.link/",
+            # Заглушки для трекеров — будут заменены позже
+            "adj_t_map": {
+                ('Да', 'Без ограничений'): 'TODO_EATS_TRACKER_1',
+                ('Только неактивных от 30 дней', 'Без ограничений'): 'TODO_EATS_TRACKER_2',
+                ('Да', '30 дней'): 'TODO_EATS_TRACKER_3',
+                ('Только неактивных от 30 дней', '30 дней'): 'TODO_EATS_TRACKER_4'
+            }
+        }
+    }
+    app_settings = app_config.get(app_name, app_config["Яндекс Go"])
+    base_url = app_settings["base_url"]
     
     # Получаем диплинк
     deeplink = user_data.get('deeplink', '')
@@ -91,14 +305,11 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
     reattribution = user_data.get('reattribution', 'Только неактивных от 30 дней')
     temporary_attribution = user_data.get('temporary_attribution', 'Без ограничений')
     
-    adj_t_map = {
-        ('Да', 'Без ограничений'): '1pj8ktrc_1pksjytf',
-        ('Только неактивных от 30 дней', 'Без ограничений'): '1md8ai4n_1mztz3nz',
-        ('Да', '30 дней'): '1p5j0f1z_1pk9ju0y',
-        ('Только неактивных от 30 дней', '30 дней'): '1pi2vjj3_1ppvctfa'
-    }
-    
-    adj_t = adj_t_map.get((reattribution, temporary_attribution), '1md8ai4n_1mztz3nz')
+    adj_t_map = app_settings["adj_t_map"]
+    adj_t = adj_t_map.get(
+        (reattribution, temporary_attribution),
+        next(iter(adj_t_map.values()))
+    )
     
     params = {
         'adj_t': adj_t,
@@ -155,16 +366,28 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
 @dp.message_handler(commands=['start'])
 async def cmd_start(message: types.Message):
     """Обработка команды /start"""
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(KeyboardButton("Да"))
-    keyboard.add(KeyboardButton("Только неактивных от 30 дней"))
+    await prompt_app(message)
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_app)
+async def process_app(message: types.Message, state: FSMContext):
+    """Обработка выбора приложения"""
+    app_name = message.text.strip()
     
-    await message.answer(
-        "🚗 Привет! Я помогу тебе создать ссылку на приложение Яндекс Go.\n\n"
-        "❓ Если у пользователя уже было приложение и он активен, нужно ли его атрибуцировать к этой ссылке?",
-        reply_markup=keyboard
-    )
-    await LinkBuilder.waiting_for_reattribution.set()
+    if app_name == BACK_BUTTON_TEXT:
+        await prompt_app(message)
+        return
+
+    if app_name not in APP_OPTIONS:
+        await message.answer(
+            "❌ Пожалуйста, выбери одно из приложений кнопкой ниже:",
+            reply_markup=keyboard_app()
+        )
+        return
+    
+    await state.update_data(app=app_name)
+    
+    await prompt_reattribution(message, app_name=app_name)
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_reattribution)
@@ -172,29 +395,20 @@ async def process_reattribution(message: types.Message, state: FSMContext):
     """Обработка выбора реатрибуции"""
     reattribution = message.text.strip()
     
-    if reattribution not in ["Да", "Только неактивных от 30 дней"]:
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(KeyboardButton("Да"))
-        keyboard.add(KeyboardButton("Только неактивных от 30 дней"))
-        
-        await message.answer(
-            "❌ Пожалуйста, используй кнопки для ответа.\n\n"
-            "❓ Если у пользователя уже было приложение и он активен, нужно ли его атрибуцировать к этой ссылке?",
-            reply_markup=keyboard
+    if reattribution == BACK_BUTTON_TEXT:
+        await prompt_app(message)
+        return
+
+    if reattribution not in REATTRIBUTION_OPTIONS:
+        await prompt_reattribution(
+            message,
+            error_prefix="❌ Пожалуйста, используй кнопки для ответа."
         )
         return
     
     await state.update_data(reattribution=reattribution)
     
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(KeyboardButton("Без ограничений"))
-    keyboard.add(KeyboardButton("30 дней"))
-    
-    await message.answer(
-        "⏰ Сколько пользователь должен оставаться в трекере после последнего контакта?",
-        reply_markup=keyboard
-    )
-    await LinkBuilder.waiting_for_temporary_attribution.set()
+    await prompt_temp_attr(message)
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_temporary_attribution)
@@ -202,25 +416,20 @@ async def process_temporary_attribution(message: types.Message, state: FSMContex
     """Обработка выбора временной атрибуции"""
     temporary_attribution = message.text.strip()
     
-    if temporary_attribution not in ["Без ограничений", "30 дней"]:
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(KeyboardButton("Без ограничений"))
-        keyboard.add(KeyboardButton("30 дней"))
-        
-        await message.answer(
-            "❌ Пожалуйста, используй кнопки для ответа.\n\n"
-            "⏰ Сколько пользователь должен оставаться в трекере после последнего контакта?",
-            reply_markup=keyboard
+    if temporary_attribution == BACK_BUTTON_TEXT:
+        await prompt_reattribution(message)
+        return
+
+    if temporary_attribution not in TEMP_ATTR_OPTIONS:
+        await prompt_temp_attr(
+            message,
+            error_prefix="❌ Пожалуйста, используй кнопки для ответа."
         )
         return
     
     await state.update_data(temporary_attribution=temporary_attribution)
     
-    await message.answer(
-        "📝 Теперь опиши одним словом название кампании для которой делается ссылка:",
-        reply_markup=ReplyKeyboardRemove()
-    )
-    await LinkBuilder.waiting_for_campaign.set()
+    await prompt_campaign(message)
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_campaign)
@@ -228,26 +437,17 @@ async def process_campaign(message: types.Message, state: FSMContext):
     """Обработка названия кампании"""
     campaign_name = message.text.strip()
     
+    if campaign_name == BACK_BUTTON_TEXT:
+        await prompt_temp_attr(message)
+        return
+
     if not campaign_name or len(campaign_name.split()) > 1:
         await message.answer("❌ Пожалуйста, введи название кампании одним словом:")
         return
     
     await state.update_data(campaign_name=campaign_name)
     
-    # Создаем клавиатуру для выбора действия
-    keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-    keyboard.add(KeyboardButton("Просто открыть приложение"))
-    keyboard.add(KeyboardButton("Сервис"))
-    keyboard.add(KeyboardButton("Промокод"))
-    keyboard.add(KeyboardButton("Тариф"))
-    keyboard.add(KeyboardButton("Баннер"))
-    keyboard.add(KeyboardButton("Свой диплинк"))
-    
-    await message.answer(
-        "✅ Отлично! Теперь выбери, что должно открываться при клике, если приложение уже есть на устройстве:",
-        reply_markup=keyboard
-    )
-    await LinkBuilder.waiting_for_action_type.set()
+    await prompt_action_type(message)
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_action_type)
@@ -255,61 +455,28 @@ async def process_action_type(message: types.Message, state: FSMContext):
     """Обработка типа действия"""
     action = message.text.strip()
     
+    if action == BACK_BUTTON_TEXT:
+        await prompt_campaign(message)
+        return
+
     if action == "Просто открыть приложение":
         await state.update_data(deeplink="yandextaxi://")
         await ask_desktop_url(message, state)
         
     elif action == "Сервис":
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(KeyboardButton("Еда"))
-        keyboard.add(KeyboardButton("Лавка"))
-        keyboard.add(KeyboardButton("Драйв"))
-        keyboard.add(KeyboardButton("Маркет"))
-        keyboard.add(KeyboardButton("Самокаты"))
-        
-        await message.answer(
-            "Выбери сервис:",
-            reply_markup=keyboard
-        )
-        await LinkBuilder.waiting_for_service.set()
+        await prompt_service(message)
         
     elif action == "Промокод":
-        await message.answer(
-            "🔗 Введи промокод:",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        await LinkBuilder.waiting_for_promo_code.set()
+        await prompt_promo_code(message)
         
     elif action == "Тариф":
-        keyboard = ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True)
-        keyboard.add(KeyboardButton("Эконом"))
-        keyboard.add(KeyboardButton("Комфорт"))
-        keyboard.add(KeyboardButton("Комфорт+"))
-        keyboard.add(KeyboardButton("Бизнес"))
-        keyboard.add(KeyboardButton("Грузовой"))
-        keyboard.add(KeyboardButton("Детский"))
-        keyboard.add(KeyboardButton("Межгород"))
-        keyboard.add(KeyboardButton("Свой тариф"))
-        
-        await message.answer(
-            "🚗 Выбери тариф:",
-            reply_markup=keyboard
-        )
-        await LinkBuilder.waiting_for_tariff.set()
+        await prompt_tariff(message)
         
     elif action == "Баннер":
-        await message.answer(
-            "🎨 Введи ID баннера:",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        await LinkBuilder.waiting_for_banner_id.set()
+        await prompt_banner_id(message)
         
     elif action == "Свой диплинк":
-        await message.answer(
-            "🔗 Введи свой диплинк в формате yandextaxi://mydeeplink:",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        await LinkBuilder.waiting_for_custom_deeplink.set()
+        await prompt_custom_deeplink(message)
         
     else:
         await message.answer("❌ Пожалуйста, выбери один из предложенных вариантов.")
@@ -333,6 +500,10 @@ async def process_service(message: types.Message, state: FSMContext):
     
     service_name = message.text.strip()
     
+    if service_name == BACK_BUTTON_TEXT:
+        await prompt_action_type(message)
+        return
+
     # Проверяем специальные диплинки
     if service_name in special_service_map:
         deeplink = special_service_map[service_name]
@@ -353,16 +524,16 @@ async def process_route_start(message: types.Message, state: FSMContext):
     """Обработка адреса отправления"""
     start_address = message.text.strip()
     
+    if start_address == BACK_BUTTON_TEXT:
+        await prompt_tariff(message)
+        return
+
     if start_address.lower() == "пропустить":
         start_address = ""
     
     await state.update_data(start_address=start_address)
     
-    await message.answer(
-        "🎯 Введи адрес назначения (или нажми 'Пропустить', если не нужен):",
-        reply_markup=ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(KeyboardButton("Пропустить"))
-    )
-    await LinkBuilder.waiting_for_route_end.set()
+    await prompt_route_end(message)
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_route_end)
@@ -370,6 +541,10 @@ async def process_route_end(message: types.Message, state: FSMContext):
     """Обработка адреса назначения"""
     end_address = message.text.strip()
     
+    if end_address == BACK_BUTTON_TEXT:
+        await prompt_route_start(message)
+        return
+
     if end_address.lower() == "пропустить":
         end_address = ""
     
@@ -415,6 +590,10 @@ async def process_custom_deeplink(message: types.Message, state: FSMContext):
     """Обработка пользовательского диплинка"""
     deeplink = message.text.strip()
     
+    if deeplink == BACK_BUTTON_TEXT:
+        await prompt_action_type(message)
+        return
+
     if not deeplink.startswith("yandextaxi://"):
         await message.answer("❌ Диплинк должен начинаться с 'yandextaxi://'. Попробуй ещё раз:")
         return
@@ -455,6 +634,10 @@ async def process_promo_code(message: types.Message, state: FSMContext):
     """Обработка промокода"""
     promo_code = message.text.strip()
     
+    if promo_code == BACK_BUTTON_TEXT:
+        await prompt_action_type(message)
+        return
+
     if not promo_code:
         await message.answer("❌ Промокод не может быть пустым. Попробуй ещё раз:")
         return
@@ -484,12 +667,12 @@ async def process_tariff(message: types.Message, state: FSMContext):
     
     tariff_name = message.text.strip()
     
+    if tariff_name == BACK_BUTTON_TEXT:
+        await prompt_action_type(message)
+        return
+
     if tariff_name == "Свой тариф":
-        await message.answer(
-            "📝 Введи код тарифа:",
-            reply_markup=ReplyKeyboardRemove()
-        )
-        await LinkBuilder.waiting_for_custom_tariff.set()
+        await prompt_custom_tariff(message)
         return
     
     if tariff_name not in tariff_map:
@@ -499,11 +682,7 @@ async def process_tariff(message: types.Message, state: FSMContext):
     base_deeplink = tariff_map[tariff_name]
     await state.update_data(base_tariff_deeplink=base_deeplink)
     
-    await message.answer(
-        "🚩 Введи адрес отправления (или нажми 'Пропустить', если не нужен):",
-        reply_markup=ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(KeyboardButton("Пропустить"))
-    )
-    await LinkBuilder.waiting_for_route_start.set()
+    await prompt_route_start(message)
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_custom_tariff)
@@ -511,6 +690,10 @@ async def process_custom_tariff(message: types.Message, state: FSMContext):
     """Обработка кода пользовательского тарифа"""
     tariff_code = message.text.strip()
     
+    if tariff_code == BACK_BUTTON_TEXT:
+        await prompt_tariff(message)
+        return
+
     if not tariff_code:
         await message.answer("❌ Код тарифа не может быть пустым. Попробуй ещё раз:")
         return
@@ -523,11 +706,7 @@ async def process_custom_tariff(message: types.Message, state: FSMContext):
     
     await state.update_data(base_tariff_deeplink=base_deeplink)
     
-    await message.answer(
-        "🚩 Введи адрес отправления (или нажми 'Пропустить', если не нужен):",
-        reply_markup=ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(KeyboardButton("Пропустить"))
-    )
-    await LinkBuilder.waiting_for_route_start.set()
+    await prompt_route_start(message)
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_banner_id)
@@ -535,6 +714,10 @@ async def process_banner_id(message: types.Message, state: FSMContext):
     """Обработка ID баннера"""
     banner_id = message.text.strip()
     
+    if banner_id == BACK_BUTTON_TEXT:
+        await prompt_action_type(message)
+        return
+
     if not banner_id:
         await message.answer("❌ ID баннера не может быть пустым. Попробуй ещё раз:")
         return
@@ -554,7 +737,7 @@ async def ask_desktop_url(message: types.Message, state: FSMContext):
     await message.answer(
         "💻 Введи URL для открытия с десктопа (опционально).\n"
         "Или нажми 'Пропустить', если не нужен:",
-        reply_markup=ReplyKeyboardMarkup(resize_keyboard=True, one_time_keyboard=True).add(KeyboardButton("Пропустить"))
+        reply_markup=keyboard_skip_back()
     )
     await LinkBuilder.waiting_for_desktop_url.set()
 
@@ -564,6 +747,30 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     """Обработка URL для десктопа"""
     desktop_url = message.text.strip()
     
+    if desktop_url == BACK_BUTTON_TEXT:
+        user_data = await state.get_data()
+        last_action = user_data.get('deeplink', '')
+        base_tariff_deeplink = user_data.get('base_tariff_deeplink')
+        
+        if base_tariff_deeplink:
+            await prompt_route_end(message)
+            return
+        
+        if last_action.startswith("yandextaxi://addpromocode"):
+            await prompt_promo_code(message)
+            return
+        
+        if last_action.startswith("yandextaxi://banner"):
+            await prompt_banner_id(message)
+            return
+        
+        if last_action.startswith("yandextaxi://") and "external" not in last_action and "route" not in last_action:
+            await prompt_custom_deeplink(message)
+            return
+        
+        await prompt_action_type(message)
+        return
+
     if desktop_url.lower() != "пропустить":
         if not is_valid_url(desktop_url):
             await message.answer("❌ Введи корректный URL (должен начинаться с http:// или https://). Попробуй ещё раз:")
@@ -587,9 +794,17 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     encoded_campaign = quote(f'"{campaign_value}"')
     encoded_adgroup = quote(f'"{adgroup_value}"')
     
+    app_name = user_data.get('app', 'Яндекс Go')
+    app_tokens_by_app = {
+        "Яндекс Go": "%2255ug2ntb3uzf%22%2C%22cs75zaz26h8x%22",
+        # Заглушка для токена Яндекс Еды — будет заменена позже
+        "Яндекс Еда": "%22TODO_EATS_APP_TOKEN%22"
+    }
+    app_tokens = app_tokens_by_app.get(app_name, app_tokens_by_app["Яндекс Go"])
+    
     stats_url = (
         "https://suite.adjust.com/datascape/report?"
-        "app_token__in=%2255ug2ntb3uzf%22%2C%22cs75zaz26h8x%22&"
+        f"app_token__in={app_tokens}&"
         "utc_offset=%2B00%3A00&reattributed=all&attribution_source=dynamic&"
         "attribution_type=all&ad_spend_mode=network&date_period=-7d%3A-1d&"
         "cohort_maturity=immature&sandbox=false&assisting_attribution_type=all&"
@@ -622,7 +837,7 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
 async def handle_other_messages(message: types.Message):
     """Обработка прочих сообщений"""
     await message.answer(
-        "🤖 Привет! Чтобы создать ссылку на Яндекс Go, отправь команду /start"
+        "🤖 Привет! Чтобы создать ссылку на Яндекс Go или Яндекс Еду, отправь команду /start"
     )
 
 
