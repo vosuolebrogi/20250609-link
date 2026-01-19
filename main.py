@@ -40,7 +40,7 @@ APP_ORDER = [
 ]
 APP_CATALOG = {
     "Драйв": {"scheme": "yandexdrive://", "base_url": "https://drive.go.link/"},
-    "Еда": {"scheme": "eda.yandex://", "base_url": "https://plms.adj.st/"},
+    "Еда": {"scheme": "eda.yandex://", "base_url": "https://eats.go.link/"},
     "Про": {"scheme": "taximeter://", "base_url": "https://lecj.adj.st/"},
     "Go": {"scheme": "yandextaxi://", "base_url": "https://yandex.go.link/"},
     "Yango": {"scheme": "yandexyango://", "base_url": "https://yango.go.link/"},
@@ -1101,13 +1101,13 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     await message.answer(
         f"🎉 Готово! Твоя ссылка:\n\n"
         f"`{final_link}`\n\n"
-        f"🔗 Альтернативная ссылка:\n\n"
-        f"`{alt_link}`\n\n"
+        f"🔗 [Альтернативная ссылка]({alt_link})\n\n"
         f"📋 Скопируй ссылку выше и используй в своей кампании!\n\n"
         f"📱 Для использования в SMS или QR-кодах рекомендуется сократить ссылку:\n"
         f"[Перейти к сокращению ссылки]({shortener_url})\n\n"
         f"📊 Для просмотра статистики переходов и установок:\n"
         f"[Открыть статистику в Adjust]({stats_url})\n\n"
+        f"🐞 Баги и пожелания: [igbelousov](https://t.me/ibelousov)\n\n"
         f"Чтобы создать новую ссылку, отправь /start",
         reply_markup=ReplyKeyboardRemove(),
         parse_mode='Markdown'
