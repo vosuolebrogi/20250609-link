@@ -42,11 +42,22 @@ def normalize_base_url(url: str) -> str:
     return url if url.endswith("/") else f"{url}/"
 
 
-def load_app_catalog(path: str) -> Tuple[List[str], Dict[str, Dict[str, str]]]:
-    try:
-        with open(path, "r", encoding="utf-8") as file:
-            data = json.loads(file.read())
-    except Exception:
+def load_app_catalog(paths: List[str]) -> Tuple[List[str], Dict[str, Dict[str, str]]]:
+    data = None
+    for path in paths:
+        try:
+            with open(path, "r", encoding="utf-8") as file:
+                raw = file.read().lstrip("\ufeff")
+                data = json.loads(raw)
+            break
+        except FileNotFoundError:
+            continue
+        except Exception:
+            data = None
+            break
+
+    if data is None:
+        logging.warning("import.txt не найден или не распознан, использую дефолт.")
         return DEFAULT_APP_ORDER, DEFAULT_APP_CATALOG
 
     app_order: List[str] = []
@@ -69,13 +80,17 @@ def load_app_catalog(path: str) -> Tuple[List[str], Dict[str, Dict[str, str]]]:
         break
 
     if not app_catalog:
+        logging.warning("В import.txt нет таблицы с приложениями, использую дефолт.")
         return DEFAULT_APP_ORDER, DEFAULT_APP_CATALOG
+    logging.info("Загружены приложения из import.txt: %s", ", ".join(app_order))
     return app_order, app_catalog
 
 
-APP_ORDER, APP_CATALOG = load_app_catalog(
-    os.path.join(os.path.dirname(__file__), "import.txt")
-)
+IMPORT_FILE_PATHS = [
+    os.path.join(os.path.dirname(__file__), "import.txt"),
+    os.path.join(os.getcwd(), "import.txt")
+]
+APP_ORDER, APP_CATALOG = load_app_catalog(IMPORT_FILE_PATHS)
 
 APP_OPTIONS = APP_ORDER
 REATTRIBUTION_OPTIONS = ["Да", "Только неактивных от 30 дней"]
