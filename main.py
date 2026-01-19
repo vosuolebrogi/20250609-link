@@ -48,7 +48,7 @@ APP_CATALOG = {
 }
 
 APP_OPTIONS = APP_ORDER
-REATTRIBUTION_OPTIONS = ["Да", "Только неактивных от 30 дней"]
+REATTRIBUTION_OPTIONS = ["Только неактивных от 30 дней", "Реатрибуцировать всех"]
 TEMP_ATTR_OPTIONS = ["Без ограничений", "30 дней"]
 ACTION_TYPE_OPTIONS = [
     OPEN_APP_GO,
@@ -152,51 +152,51 @@ def get_adj_t_map(app_name: Optional[str]) -> Dict[tuple, str]:
     app_name = get_app_name_or_default(app_name)
     if app_name == GO_APP_NAME:
         return {
-            ('Да', 'Без ограничений'): '1pj8ktrc_1pksjytf',
+            ('Реатрибуцировать всех', 'Без ограничений'): '1pj8ktrc_1pksjytf',
             ('Только неактивных от 30 дней', 'Без ограничений'): '1md8ai4n_1mztz3nz',
-            ('Да', '30 дней'): '1p5j0f1z_1pk9ju0y',
+            ('Реатрибуцировать всех', '30 дней'): '1p5j0f1z_1pk9ju0y',
             ('Только неактивных от 30 дней', '30 дней'): '1pi2vjj3_1ppvctfa'
         }
     if app_name == "Драйв":
         return {
             ('Только неактивных от 30 дней', 'Без ограничений'): '1w1fyjuh',
             ('Только неактивных от 30 дней', '30 дней'): '1w6rk3g5',
-            ('Да', 'Без ограничений'): '1w1h2sce',
-            ('Да', '30 дней'): '1w1k1t8b'
+            ('Реатрибуцировать всех', 'Без ограничений'): '1w1h2sce',
+            ('Реатрибуцировать всех', '30 дней'): '1w1k1t8b'
         }
     if app_name == "Еда":
         return {
-            ('Да', 'Без ограничений'): '1wj02w0e_1woudcyr',
+            ('Реатрибуцировать всех', 'Без ограничений'): '1wj02w0e_1woudcyr',
             ('Только неактивных от 30 дней', 'Без ограничений'): '1w72129e_1ww1am8e',
-            ('Да', '30 дней'): '1w1uhauh_1w3dtcvs',
+            ('Реатрибуцировать всех', '30 дней'): '1w1uhauh_1w3dtcvs',
             ('Только неактивных от 30 дней', '30 дней'): '1wwnx9c4_1wybzoum'
         }
     if app_name == "Про":
         return {
             ('Только неактивных от 30 дней', 'Без ограничений'): '1w1w0cie_1wf70eky',
             ('Только неактивных от 30 дней', '30 дней'): '1whu80dy_1wtdlfwn',
-            ('Да', 'Без ограничений'): '1w7uoyoq_1wsa2db8',
-            ('Да', '30 дней'): '1w7ztrws_1wqmugs1'
+            ('Реатрибуцировать всех', 'Без ограничений'): '1w7uoyoq_1wsa2db8',
+            ('Реатрибуцировать всех', '30 дней'): '1w7ztrws_1wqmugs1'
         }
     if app_name == "Yango":
         return {
             ('Только неактивных от 30 дней', 'Без ограничений'): '1wrqmlfd_1wtbr2vt',
             ('Только неактивных от 30 дней', '30 дней'): '1w3dkzxf_1wksmxnr',
-            ('Да', 'Без ограничений'): '1wlyrbe7_1woa6n8p',
-            ('Да', '30 дней'): '1w6zxhcl_1wfkbjtw'
+            ('Реатрибуцировать всех', 'Без ограничений'): '1wlyrbe7_1woa6n8p',
+            ('Реатрибуцировать всех', '30 дней'): '1w6zxhcl_1wfkbjtw'
         }
     if app_name == "Yango Pro":
         return {
             ('Только неактивных от 30 дней', 'Без ограничений'): '1wcen01x_1wh11pd5',
             ('Только неактивных от 30 дней', '30 дней'): '1w59mp9k_1wkp0jy5',
-            ('Да', 'Без ограничений'): '1w31vlxu_1w3aa34h',
-            ('Да', '30 дней'): '1wxd0aln_1wzdqopt'
+            ('Реатрибуцировать всех', 'Без ограничений'): '1w31vlxu_1w3aa34h',
+            ('Реатрибуцировать всех', '30 дней'): '1wxd0aln_1wzdqopt'
         }
     # Заглушки для трекеров остальных приложений — будут заменены позже
     return {
-        ('Да', 'Без ограничений'): 'TODO_TRACKER_1',
+        ('Реатрибуцировать всех', 'Без ограничений'): 'TODO_TRACKER_1',
         ('Только неактивных от 30 дней', 'Без ограничений'): 'TODO_TRACKER_2',
-        ('Да', '30 дней'): 'TODO_TRACKER_3',
+        ('Реатрибуцировать всех', '30 дней'): 'TODO_TRACKER_3',
         ('Только неактивных от 30 дней', '30 дней'): 'TODO_TRACKER_4'
     }
 
@@ -205,9 +205,19 @@ def get_action_type_options(app_name: Optional[str]) -> List[str]:
     app_name = get_app_name_or_default(app_name)
     if app_name == GO_APP_NAME:
         return ACTION_TYPE_OPTIONS
+    if app_name == "Yango":
+        return [OPEN_APP_OTHER, "Промокод", "Тариф", "Баннер", "Свой диплинк"]
     if app_name == "Еда":
         return [OPEN_APP_OTHER, "Ресторан", "Свой диплинк"]
     return [OPEN_APP_OTHER, "Свой диплинк"]
+
+
+def get_open_app_deeplink(app_name: Optional[str]) -> str:
+    app_name = get_app_name_or_default(app_name)
+    scheme_prefix = get_app_scheme(app_name)
+    if app_name in ["Про", "Yango Pro"]:
+        return f"{scheme_prefix}screen/main?"
+    return scheme_prefix
 
 
 def keyboard_action_type_for_app(app_name: Optional[str]) -> ReplyKeyboardMarkup:
@@ -220,7 +230,7 @@ def build_reattribution_text(app_name: Optional[str] = None) -> str:
         "атрибуцировать к этой ссылке?"
     )
     if app_name:
-        return f"✅ Ок! Делаем ссылку для приложения {app_name}.\n\n{base_question}"
+        return f"✅ Делаем ссылку для приложения {app_name}.\n\n{base_question}"
     return base_question
 
 
@@ -621,7 +631,7 @@ async def process_action_type(message: types.Message, state: FSMContext):
     await state.update_data(action_type=action)
 
     if action in [OPEN_APP_GO, OPEN_APP_OTHER]:
-        await state.update_data(deeplink=get_app_scheme(app_name))
+        await state.update_data(deeplink=get_open_app_deeplink(app_name))
         await ask_desktop_url(message, state)
         
     elif action == "Сервис":
@@ -824,6 +834,7 @@ async def process_route_end(message: types.Message, state: FSMContext):
     user_data = await state.get_data()
     start_address = user_data.get('start_address', '')
     base_tariff_deeplink = user_data.get('base_tariff_deeplink', '')
+    scheme_prefix = get_app_scheme(user_data.get("app"))
     
     # Формируем параметры маршрута
     route_params = []
@@ -834,10 +845,10 @@ async def process_route_end(message: types.Message, state: FSMContext):
     
     # Объединяем тарифные и маршрутные параметры
     if base_tariff_deeplink:
-        if base_tariff_deeplink == "yandextaxi://intercity_main":
+        if base_tariff_deeplink == f"{scheme_prefix}intercity_main":
             # Для межгорода используем специальную логику
             if route_params:
-                deeplink = f"yandextaxi://intercity_main?{'&'.join(route_params)}"
+                deeplink = f"{scheme_prefix}intercity_main?{'&'.join(route_params)}"
             else:
                 deeplink = base_tariff_deeplink
         else:
@@ -850,9 +861,9 @@ async def process_route_end(message: types.Message, state: FSMContext):
     else:
         # Если нет базового тарифного диплинка (не должно происходить в новой логике)
         if route_params:
-            deeplink = f"yandextaxi://route?{'&'.join(route_params)}"
+            deeplink = f"{scheme_prefix}route?{'&'.join(route_params)}"
         else:
-            deeplink = "yandextaxi://route"
+            deeplink = f"{scheme_prefix}route"
     
     await state.update_data(deeplink=deeplink)
     await ask_desktop_url(message, state)
@@ -918,11 +929,14 @@ async def process_promo_code(message: types.Message, state: FSMContext):
         await message.answer("❌ Промокод не может быть пустым. Попробуй ещё раз:")
         return
     
+    user_data = await state.get_data()
+    scheme_prefix = get_app_scheme(user_data.get("app"))
+
     # URL-кодируем промокод
     encoded_promo_code = quote(promo_code)
     
     # Формируем диплинк с промокодом
-    deeplink = f"yandextaxi://addpromocode?code={encoded_promo_code}"
+    deeplink = f"{scheme_prefix}addpromocode?code={encoded_promo_code}"
     
     await state.update_data(deeplink=deeplink)
     await ask_desktop_url(message, state)
@@ -931,14 +945,16 @@ async def process_promo_code(message: types.Message, state: FSMContext):
 @dp.message_handler(state=LinkBuilder.waiting_for_tariff)
 async def process_tariff(message: types.Message, state: FSMContext):
     """Обработка выбора тарифа"""
+    user_data = await state.get_data()
+    scheme_prefix = get_app_scheme(user_data.get("app"))
     tariff_map = {
-        "Эконом": "yandextaxi://route?tariffClass=econom",
-        "Комфорт": "yandextaxi://route?tariffClass=comfortplus",
-        "Комфорт+": "yandextaxi://route?tariffClass=business",
-        "Бизнес": "yandextaxi://route?tariffClass=vip&vertical=ultima",
-        "Грузовой": "yandextaxi://route?tariffClass=cargo",
-        "Детский": "yandextaxi://route?tariffClass=child_tariff",
-        "Межгород": "yandextaxi://intercity_main"
+        "Эконом": f"{scheme_prefix}route?tariffClass=econom",
+        "Комфорт": f"{scheme_prefix}route?tariffClass=comfortplus",
+        "Комфорт+": f"{scheme_prefix}route?tariffClass=business",
+        "Бизнес": f"{scheme_prefix}route?tariffClass=vip&vertical=ultima",
+        "Грузовой": f"{scheme_prefix}route?tariffClass=cargo",
+        "Детский": f"{scheme_prefix}route?tariffClass=child_tariff",
+        "Межгород": f"{scheme_prefix}intercity_main"
     }
     
     tariff_name = message.text.strip()
@@ -974,11 +990,14 @@ async def process_custom_tariff(message: types.Message, state: FSMContext):
         await message.answer("❌ Код тарифа не может быть пустым. Попробуй ещё раз:")
         return
     
+    user_data = await state.get_data()
+    scheme_prefix = get_app_scheme(user_data.get("app"))
+
     # URL-кодируем код тарифа
     encoded_tariff_code = quote(tariff_code)
     
     # Формируем базовый диплинк с кодом тарифа
-    base_deeplink = f"yandextaxi://route?tariffClass={encoded_tariff_code}"
+    base_deeplink = f"{scheme_prefix}route?tariffClass={encoded_tariff_code}"
     
     await state.update_data(base_tariff_deeplink=base_deeplink)
     
@@ -998,11 +1017,14 @@ async def process_banner_id(message: types.Message, state: FSMContext):
         await message.answer("❌ ID баннера не может быть пустым. Попробуй ещё раз:")
         return
     
+    user_data = await state.get_data()
+    scheme_prefix = get_app_scheme(user_data.get("app"))
+
     # URL-кодируем ID баннера
     encoded_banner_id = quote(banner_id)
     
     # Формируем диплинк с ID баннера
-    deeplink = f"yandextaxi://banner?id={encoded_banner_id}"
+    deeplink = f"{scheme_prefix}banner?id={encoded_banner_id}"
     
     await state.update_data(deeplink=deeplink)
     await ask_desktop_url(message, state)
