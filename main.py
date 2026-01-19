@@ -1,9 +1,10 @@
 import os
 import re
+import json
 import logging
 from datetime import datetime
 from urllib.parse import quote, urlparse, parse_qs, unquote
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, Tuple, List
 
 from aiogram import Bot, Dispatcher, types
 from aiogram.contrib.fsm_storage.memory import MemoryStorage
@@ -26,7 +27,57 @@ storage = MemoryStorage()
 dp = Dispatcher(bot, storage=storage)
 
 BACK_BUTTON_TEXT = "Назад"
-APP_OPTIONS = ["Яндекс Go", "Яндекс Еда"]
+GO_APP_NAME = "Go"
+
+DEFAULT_APP_ORDER = [GO_APP_NAME]
+DEFAULT_APP_CATALOG = {
+    GO_APP_NAME: {
+        "scheme": "yandextaxi://",
+        "base_url": "https://yandex.go.link/"
+    }
+}
+
+
+def normalize_base_url(url: str) -> str:
+    return url if url.endswith("/") else f"{url}/"
+
+
+def load_app_catalog(path: str) -> Tuple[List[str], Dict[str, Dict[str, str]]]:
+    try:
+        with open(path, "r", encoding="utf-8") as file:
+            data = json.loads(file.read())
+    except Exception:
+        return DEFAULT_APP_ORDER, DEFAULT_APP_CATALOG
+
+    app_order: List[str] = []
+    app_catalog: Dict[str, Dict[str, str]] = {}
+
+    for table in data:
+        if table.get("table_index") != 1:
+            continue
+        for row in table.get("table", []):
+            app_name = row.get("App")
+            scheme = row.get("Scheme")
+            base_url = row.get("iOS Universal Deeplink")
+            if not app_name or not scheme or not base_url:
+                continue
+            app_order.append(app_name)
+            app_catalog[app_name] = {
+                "scheme": scheme,
+                "base_url": normalize_base_url(base_url)
+            }
+        break
+
+    if not app_catalog:
+        return DEFAULT_APP_ORDER, DEFAULT_APP_CATALOG
+    return app_order, app_catalog
+
+
+APP_ORDER, APP_CATALOG = load_app_catalog(
+    os.path.join(os.path.dirname(__file__), "import.txt")
+)
+
+APP_OPTIONS = APP_ORDER
 REATTRIBUTION_OPTIONS = ["Да", "Только неактивных от 30 дней"]
 TEMP_ATTR_OPTIONS = ["Без ограничений", "30 дней"]
 ACTION_TYPE_OPTIONS = [
@@ -88,10 +139,6 @@ def keyboard_temp_attr() -> ReplyKeyboardMarkup:
     return make_keyboard(TEMP_ATTR_OPTIONS, include_back=True)
 
 
-def keyboard_action_type() -> ReplyKeyboardMarkup:
-    return make_keyboard(ACTION_TYPE_OPTIONS, include_back=True)
-
-
 def keyboard_service() -> ReplyKeyboardMarkup:
     return make_keyboard(SERVICE_OPTIONS, include_back=True)
 
@@ -106,6 +153,51 @@ def keyboard_back_only() -> ReplyKeyboardMarkup:
 
 def keyboard_skip_back() -> ReplyKeyboardMarkup:
     return make_keyboard(["Пропустить"], include_back=True)
+
+
+def get_app_name_or_default(app_name: Optional[str]) -> str:
+    if app_name in APP_CATALOG:
+        return app_name
+    return APP_ORDER[0] if APP_ORDER else GO_APP_NAME
+
+
+def get_app_scheme(app_name: Optional[str]) -> str:
+    app_name = get_app_name_or_default(app_name)
+    return APP_CATALOG.get(app_name, DEFAULT_APP_CATALOG[GO_APP_NAME])["scheme"]
+
+
+def get_app_base_url(app_name: Optional[str]) -> str:
+    app_name = get_app_name_or_default(app_name)
+    return APP_CATALOG.get(app_name, DEFAULT_APP_CATALOG[GO_APP_NAME])["base_url"]
+
+
+def get_adj_t_map(app_name: Optional[str]) -> Dict[tuple, str]:
+    app_name = get_app_name_or_default(app_name)
+    if app_name == GO_APP_NAME:
+        return {
+            ('Да', 'Без ограничений'): '1pj8ktrc_1pksjytf',
+            ('Только неактивных от 30 дней', 'Без ограничений'): '1md8ai4n_1mztz3nz',
+            ('Да', '30 дней'): '1p5j0f1z_1pk9ju0y',
+            ('Только неактивных от 30 дней', '30 дней'): '1pi2vjj3_1ppvctfa'
+        }
+    # Заглушки для трекеров остальных приложений — будут заменены позже
+    return {
+        ('Да', 'Без ограничений'): 'TODO_TRACKER_1',
+        ('Только неактивных от 30 дней', 'Без ограничений'): 'TODO_TRACKER_2',
+        ('Да', '30 дней'): 'TODO_TRACKER_3',
+        ('Только неактивных от 30 дней', '30 дней'): 'TODO_TRACKER_4'
+    }
+
+
+def get_action_type_options(app_name: Optional[str]) -> List[str]:
+    app_name = get_app_name_or_default(app_name)
+    if app_name == GO_APP_NAME:
+        return ACTION_TYPE_OPTIONS
+    return ["Просто открыть приложение"]
+
+
+def keyboard_action_type_for_app(app_name: Optional[str]) -> ReplyKeyboardMarkup:
+    return make_keyboard(get_action_type_options(app_name), include_back=True)
 
 
 def build_reattribution_text(app_name: Optional[str] = None) -> str:
@@ -161,10 +253,12 @@ async def prompt_campaign(message: types.Message) -> None:
     await LinkBuilder.waiting_for_campaign.set()
 
 
-async def prompt_action_type(message: types.Message) -> None:
+async def prompt_action_type_with_state(message: types.Message, state: FSMContext) -> None:
+    user_data = await state.get_data()
+    app_name = user_data.get("app", GO_APP_NAME)
     await message.answer(
         "✅ Отлично! Теперь выбери, что должно открываться при клике, если приложение уже есть на устройстве:",
-        reply_markup=keyboard_action_type()
+        reply_markup=keyboard_action_type_for_app(app_name)
     )
     await LinkBuilder.waiting_for_action_type.set()
 
@@ -209,9 +303,11 @@ async def prompt_banner_id(message: types.Message) -> None:
     await LinkBuilder.waiting_for_banner_id.set()
 
 
-async def prompt_custom_deeplink(message: types.Message) -> None:
+async def prompt_custom_deeplink(message: types.Message, state: FSMContext) -> None:
+    user_data = await state.get_data()
+    scheme_prefix = get_app_scheme(user_data.get("app"))
     await message.answer(
-        "🔗 Введи свой диплинк в формате yandextaxi://mydeeplink:",
+        f"🔗 Введи свой диплинк в формате {scheme_prefix}mydeeplink:",
         reply_markup=keyboard_back_only()
     )
     await LinkBuilder.waiting_for_custom_deeplink.set()
@@ -266,35 +362,14 @@ def is_valid_url(url: str) -> bool:
 def build_final_link(user_data: Dict[str, Any]) -> str:
     """Построение финальной ссылки"""
     # Базовая часть ссылки
-    app_name = user_data.get('app', 'Яндекс Go')
-    app_config = {
-        "Яндекс Go": {
-            "base_url": "https://yandex.go.link/",
-            "adj_t_map": {
-                ('Да', 'Без ограничений'): '1pj8ktrc_1pksjytf',
-                ('Только неактивных от 30 дней', 'Без ограничений'): '1md8ai4n_1mztz3nz',
-                ('Да', '30 дней'): '1p5j0f1z_1pk9ju0y',
-                ('Только неактивных от 30 дней', '30 дней'): '1pi2vjj3_1ppvctfa'
-            }
-        },
-        "Яндекс Еда": {
-            "base_url": "https://eats.go.link/",
-            # Заглушки для трекеров — будут заменены позже
-            "adj_t_map": {
-                ('Да', 'Без ограничений'): 'TODO_EATS_TRACKER_1',
-                ('Только неактивных от 30 дней', 'Без ограничений'): 'TODO_EATS_TRACKER_2',
-                ('Да', '30 дней'): 'TODO_EATS_TRACKER_3',
-                ('Только неактивных от 30 дней', '30 дней'): 'TODO_EATS_TRACKER_4'
-            }
-        }
-    }
-    app_settings = app_config.get(app_name, app_config["Яндекс Go"])
-    base_url = app_settings["base_url"]
+    app_name = user_data.get('app', GO_APP_NAME)
+    base_url = get_app_base_url(app_name)
+    scheme_prefix = get_app_scheme(app_name)
     
     # Получаем диплинк
     deeplink = user_data.get('deeplink', '')
-    if deeplink.startswith('yandextaxi://'):
-        deeplink = deeplink[13:]  # Убираем yandextaxi://
+    if deeplink.startswith(scheme_prefix):
+        deeplink = deeplink[len(scheme_prefix):]
     
     # Параметры
     today = datetime.now().strftime('%Y%m%d')
@@ -305,7 +380,7 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
     reattribution = user_data.get('reattribution', 'Только неактивных от 30 дней')
     temporary_attribution = user_data.get('temporary_attribution', 'Без ограничений')
     
-    adj_t_map = app_settings["adj_t_map"]
+    adj_t_map = get_adj_t_map(app_name)
     adj_t = adj_t_map.get(
         (reattribution, temporary_attribution),
         next(iter(adj_t_map.values()))
@@ -447,7 +522,7 @@ async def process_campaign(message: types.Message, state: FSMContext):
     
     await state.update_data(campaign_name=campaign_name)
     
-    await prompt_action_type(message)
+    await prompt_action_type_with_state(message, state)
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_action_type)
@@ -459,8 +534,21 @@ async def process_action_type(message: types.Message, state: FSMContext):
         await prompt_campaign(message)
         return
 
+    user_data = await state.get_data()
+    app_name = user_data.get("app", GO_APP_NAME)
+    allowed_actions = get_action_type_options(app_name)
+
+    if action not in allowed_actions:
+        await message.answer(
+            "❌ Пожалуйста, выбери один из предложенных вариантов.",
+            reply_markup=keyboard_action_type_for_app(app_name)
+        )
+        return
+
+    await state.update_data(action_type=action)
+
     if action == "Просто открыть приложение":
-        await state.update_data(deeplink="yandextaxi://")
+        await state.update_data(deeplink=get_app_scheme(app_name))
         await ask_desktop_url(message, state)
         
     elif action == "Сервис":
@@ -476,10 +564,7 @@ async def process_action_type(message: types.Message, state: FSMContext):
         await prompt_banner_id(message)
         
     elif action == "Свой диплинк":
-        await prompt_custom_deeplink(message)
-        
-    else:
-        await message.answer("❌ Пожалуйста, выбери один из предложенных вариантов.")
+        await prompt_custom_deeplink(message, state)
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_service)
@@ -501,7 +586,7 @@ async def process_service(message: types.Message, state: FSMContext):
     service_name = message.text.strip()
     
     if service_name == BACK_BUTTON_TEXT:
-        await prompt_action_type(message)
+        await prompt_action_type_with_state(message, state)
         return
 
     # Проверяем специальные диплинки
@@ -591,18 +676,21 @@ async def process_custom_deeplink(message: types.Message, state: FSMContext):
     deeplink = message.text.strip()
     
     if deeplink == BACK_BUTTON_TEXT:
-        await prompt_action_type(message)
+        await prompt_action_type_with_state(message, state)
         return
 
-    if not deeplink.startswith("yandextaxi://"):
-        await message.answer("❌ Диплинк должен начинаться с 'yandextaxi://'. Попробуй ещё раз:")
+    user_data = await state.get_data()
+    scheme_prefix = get_app_scheme(user_data.get("app"))
+
+    if not deeplink.startswith(scheme_prefix):
+        await message.answer(f"❌ Диплинк должен начинаться с '{scheme_prefix}'. Попробуй ещё раз:")
         return
     
     # Проверяем наличие параметра href и автоматически кодируем его при необходимости
     if "href=" in deeplink:
         try:
-            # Извлекаем часть после yandextaxi://
-            deeplink_part = deeplink[13:]  # убираем yandextaxi://
+            # Извлекаем часть после scheme://
+            deeplink_part = deeplink[len(scheme_prefix):]
             
             # Ищем позицию href= в диплинке
             href_pos = deeplink_part.find("href=")
@@ -619,7 +707,7 @@ async def process_custom_deeplink(message: types.Message, state: FSMContext):
                     encoded_href = quote(href_value)
                     
                     # Пересобираем диплинк
-                    deeplink = f"yandextaxi://{before_href}href={encoded_href}"
+                    deeplink = f"{scheme_prefix}{before_href}href={encoded_href}"
                         
         except Exception as e:
             await message.answer("❌ Ошибка при обработке диплинка. Попробуй ещё раз:")
@@ -635,7 +723,7 @@ async def process_promo_code(message: types.Message, state: FSMContext):
     promo_code = message.text.strip()
     
     if promo_code == BACK_BUTTON_TEXT:
-        await prompt_action_type(message)
+        await prompt_action_type_with_state(message, state)
         return
 
     if not promo_code:
@@ -668,7 +756,7 @@ async def process_tariff(message: types.Message, state: FSMContext):
     tariff_name = message.text.strip()
     
     if tariff_name == BACK_BUTTON_TEXT:
-        await prompt_action_type(message)
+        await prompt_action_type_with_state(message, state)
         return
 
     if tariff_name == "Свой тариф":
@@ -715,7 +803,7 @@ async def process_banner_id(message: types.Message, state: FSMContext):
     banner_id = message.text.strip()
     
     if banner_id == BACK_BUTTON_TEXT:
-        await prompt_action_type(message)
+        await prompt_action_type_with_state(message, state)
         return
 
     if not banner_id:
@@ -749,26 +837,30 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     
     if desktop_url == BACK_BUTTON_TEXT:
         user_data = await state.get_data()
-        last_action = user_data.get('deeplink', '')
+        action_type = user_data.get('action_type')
         base_tariff_deeplink = user_data.get('base_tariff_deeplink')
         
-        if base_tariff_deeplink:
+        if action_type == "Тариф" and base_tariff_deeplink:
             await prompt_route_end(message)
             return
         
-        if last_action.startswith("yandextaxi://addpromocode"):
+        if action_type == "Промокод":
             await prompt_promo_code(message)
             return
         
-        if last_action.startswith("yandextaxi://banner"):
+        if action_type == "Баннер":
             await prompt_banner_id(message)
             return
         
-        if last_action.startswith("yandextaxi://") and "external" not in last_action and "route" not in last_action:
-            await prompt_custom_deeplink(message)
+        if action_type == "Свой диплинк":
+            await prompt_custom_deeplink(message, state)
+            return
+
+        if action_type == "Сервис":
+            await prompt_service(message)
             return
         
-        await prompt_action_type(message)
+        await prompt_action_type_with_state(message, state)
         return
 
     if desktop_url.lower() != "пропустить":
@@ -794,13 +886,13 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     encoded_campaign = quote(f'"{campaign_value}"')
     encoded_adgroup = quote(f'"{adgroup_value}"')
     
-    app_name = user_data.get('app', 'Яндекс Go')
+    app_name = user_data.get('app', GO_APP_NAME)
     app_tokens_by_app = {
-        "Яндекс Go": "%2255ug2ntb3uzf%22%2C%22cs75zaz26h8x%22",
-        # Заглушка для токена Яндекс Еды — будет заменена позже
-        "Яндекс Еда": "%22TODO_EATS_APP_TOKEN%22"
+        GO_APP_NAME: "%2255ug2ntb3uzf%22%2C%22cs75zaz26h8x%22",
+        # Заглушки для токенов других приложений — будут заменены позже
+        "Еда": "%22TODO_EATS_APP_TOKEN%22"
     }
-    app_tokens = app_tokens_by_app.get(app_name, app_tokens_by_app["Яндекс Go"])
+    app_tokens = app_tokens_by_app.get(app_name, "%22TODO_APP_TOKEN%22")
     
     stats_url = (
         "https://suite.adjust.com/datascape/report?"
@@ -837,7 +929,7 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
 async def handle_other_messages(message: types.Message):
     """Обработка прочих сообщений"""
     await message.answer(
-        "🤖 Привет! Чтобы создать ссылку на Яндекс Go или Яндекс Еду, отправь команду /start"
+        "🤖 Привет! Чтобы создать ссылку, отправь команду /start"
     )
 
 
