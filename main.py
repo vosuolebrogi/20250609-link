@@ -1,6 +1,5 @@
 import os
 import re
-import json
 import logging
 from datetime import datetime
 from urllib.parse import quote, urlparse, parse_qs, unquote
@@ -28,75 +27,33 @@ dp = Dispatcher(bot, storage=storage)
 
 BACK_BUTTON_TEXT = "Назад"
 GO_APP_NAME = "Go"
+OPEN_APP_GO = "Просто открыть приложение"
+OPEN_APP_OTHER = "Открыть приложение"
 
-DEFAULT_APP_ORDER = [GO_APP_NAME]
-DEFAULT_APP_CATALOG = {
-    GO_APP_NAME: {
-        "scheme": "yandextaxi://",
-        "base_url": "https://yandex.go.link/"
-    }
-}
-
-
-def normalize_base_url(url: str) -> str:
-    return url if url.endswith("/") else f"{url}/"
-
-
-def load_app_catalog(paths: List[str]) -> Tuple[List[str], Dict[str, Dict[str, str]]]:
-    data = None
-    for path in paths:
-        try:
-            with open(path, "r", encoding="utf-8") as file:
-                raw = file.read().lstrip("\ufeff")
-                data = json.loads(raw)
-            break
-        except FileNotFoundError:
-            continue
-        except Exception:
-            data = None
-            break
-
-    if data is None:
-        logging.warning("import.txt не найден или не распознан, использую дефолт.")
-        return DEFAULT_APP_ORDER, DEFAULT_APP_CATALOG
-
-    app_order: List[str] = []
-    app_catalog: Dict[str, Dict[str, str]] = {}
-
-    for table in data:
-        if table.get("table_index") != 1:
-            continue
-        for row in table.get("table", []):
-            app_name = row.get("App")
-            scheme = row.get("Scheme")
-            base_url = row.get("iOS Universal Deeplink")
-            if not app_name or not scheme or not base_url:
-                continue
-            app_order.append(app_name)
-            app_catalog[app_name] = {
-                "scheme": scheme,
-                "base_url": normalize_base_url(base_url)
-            }
-        break
-
-    if not app_catalog:
-        logging.warning("В import.txt нет таблицы с приложениями, использую дефолт.")
-        return DEFAULT_APP_ORDER, DEFAULT_APP_CATALOG
-    logging.info("Загружены приложения из import.txt: %s", ", ".join(app_order))
-    return app_order, app_catalog
-
-
-IMPORT_FILE_PATHS = [
-    os.path.join(os.path.dirname(__file__), "import.txt"),
-    os.path.join(os.getcwd(), "import.txt")
+APP_ORDER = [
+    "Драйв",
+    "Еда",
+    "Про",
+    "Dodotaxi",
+    "Go",
+    "Yango",
+    "Yango Pro"
 ]
-APP_ORDER, APP_CATALOG = load_app_catalog(IMPORT_FILE_PATHS)
+APP_CATALOG = {
+    "Драйв": {"scheme": "yandexdrive://", "base_url": "https://drive.go.link/"},
+    "Еда": {"scheme": "eda.yandex://", "base_url": "https://plms.adj.st/"},
+    "Про": {"scheme": "taximeter://", "base_url": "https://lecj.adj.st/"},
+    "Dodotaxi": {"scheme": "dodotaxi-rider://", "base_url": "https://xkc2.adj.st/"},
+    "Go": {"scheme": "yandextaxi://", "base_url": "https://yandex.go.link/"},
+    "Yango": {"scheme": "yandexyango://", "base_url": "https://yango.go.link/"},
+    "Yango Pro": {"scheme": "taximeter://", "base_url": "https://ubq5.adj.st/"}
+}
 
 APP_OPTIONS = APP_ORDER
 REATTRIBUTION_OPTIONS = ["Да", "Только неактивных от 30 дней"]
 TEMP_ATTR_OPTIONS = ["Без ограничений", "30 дней"]
 ACTION_TYPE_OPTIONS = [
-    "Просто открыть приложение",
+    OPEN_APP_GO,
     "Сервис",
     "Промокод",
     "Тариф",
@@ -178,12 +135,12 @@ def get_app_name_or_default(app_name: Optional[str]) -> str:
 
 def get_app_scheme(app_name: Optional[str]) -> str:
     app_name = get_app_name_or_default(app_name)
-    return APP_CATALOG.get(app_name, DEFAULT_APP_CATALOG[GO_APP_NAME])["scheme"]
+    return APP_CATALOG.get(app_name, APP_CATALOG[GO_APP_NAME])["scheme"]
 
 
 def get_app_base_url(app_name: Optional[str]) -> str:
     app_name = get_app_name_or_default(app_name)
-    return APP_CATALOG.get(app_name, DEFAULT_APP_CATALOG[GO_APP_NAME])["base_url"]
+    return APP_CATALOG.get(app_name, APP_CATALOG[GO_APP_NAME])["base_url"]
 
 
 def get_adj_t_map(app_name: Optional[str]) -> Dict[tuple, str]:
@@ -208,7 +165,7 @@ def get_action_type_options(app_name: Optional[str]) -> List[str]:
     app_name = get_app_name_or_default(app_name)
     if app_name == GO_APP_NAME:
         return ACTION_TYPE_OPTIONS
-    return ["Просто открыть приложение"]
+    return [OPEN_APP_OTHER, "Свой диплинк"]
 
 
 def keyboard_action_type_for_app(app_name: Optional[str]) -> ReplyKeyboardMarkup:
@@ -562,7 +519,7 @@ async def process_action_type(message: types.Message, state: FSMContext):
 
     await state.update_data(action_type=action)
 
-    if action == "Просто открыть приложение":
+    if action in [OPEN_APP_GO, OPEN_APP_OTHER]:
         await state.update_data(deeplink=get_app_scheme(app_name))
         await ask_desktop_url(message, state)
         
@@ -890,7 +847,7 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     
     # Создаём ссылку для сокращения
     encoded_link = quote(final_link)
-    shortener_url = f"https://go-admin-frontend.taxi.tst.yandex-team.ru/adjust?url={encoded_link}"
+    shortener_url = f"https://go-admin-frontend.taxi.yandex-team.ru/adjust?url={encoded_link}"
     
     # Создаем ссылку на статистику
     today = datetime.now().strftime('%Y%m%d')
