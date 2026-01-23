@@ -73,6 +73,7 @@ TARIFF_OPTIONS = [
 
 class LinkBuilder(StatesGroup):
     waiting_for_app = State()
+    waiting_for_eats_tracker_choice = State()
     waiting_for_reattribution = State()
     waiting_for_temporary_attribution = State()
     waiting_for_campaign = State()
@@ -128,6 +129,13 @@ def keyboard_back_only() -> ReplyKeyboardMarkup:
 
 def keyboard_skip_back() -> ReplyKeyboardMarkup:
     return make_keyboard(["Пропустить"], include_back=True)
+
+
+def keyboard_eats_tracker_choice() -> ReplyKeyboardMarkup:
+    return make_keyboard(
+        ["Настроить атрибуцию", "Partners_new", "SMM", "dineout"],
+        include_back=True
+    )
 
 
 def keyboard_eats_options() -> ReplyKeyboardMarkup:
@@ -246,6 +254,14 @@ async def prompt_app(message: types.Message) -> None:
         reply_markup=keyboard_app()
     )
     await LinkBuilder.waiting_for_app.set()
+
+
+async def prompt_eats_tracker_choice(message: types.Message) -> None:
+    await message.answer(
+        "Настроить атрибуцию или использовать существующий трекер?",
+        reply_markup=keyboard_eats_tracker_choice()
+    )
+    await LinkBuilder.waiting_for_eats_tracker_choice.set()
 
 
 async def prompt_reattribution(
@@ -476,11 +492,15 @@ def build_final_link(user_data: Dict[str, Any]) -> str:
     reattribution = user_data.get('reattribution', 'Только неактивных от 30 дней')
     temporary_attribution = user_data.get('temporary_attribution', 'Без ограничений')
     
-    adj_t_map = get_adj_t_map(app_name)
-    adj_t = adj_t_map.get(
-        (reattribution, temporary_attribution),
-        next(iter(adj_t_map.values()))
-    )
+    adj_t_override = user_data.get('adj_t_override')
+    if adj_t_override:
+        adj_t = adj_t_override
+    else:
+        adj_t_map = get_adj_t_map(app_name)
+        adj_t = adj_t_map.get(
+            (reattribution, temporary_attribution),
+            next(iter(adj_t_map.values()))
+        )
     
     params = {
         'adj_t': adj_t,
@@ -518,11 +538,15 @@ def build_adjust_app_link(user_data: Dict[str, Any]) -> str:
 
     reattribution = user_data.get('reattribution', 'Только неактивных от 30 дней')
     temporary_attribution = user_data.get('temporary_attribution', 'Без ограничений')
-    adj_t_map = get_adj_t_map(app_name)
-    adj_t = adj_t_map.get(
-        (reattribution, temporary_attribution),
-        next(iter(adj_t_map.values()))
-    )
+    adj_t_override = user_data.get('adj_t_override')
+    if adj_t_override:
+        adj_t = adj_t_override
+    else:
+        adj_t_map = get_adj_t_map(app_name)
+        adj_t = adj_t_map.get(
+            (reattribution, temporary_attribution),
+            next(iter(adj_t_map.values()))
+        )
 
     params = {
         'campaign': campaign_value,
@@ -562,8 +586,42 @@ async def process_app(message: types.Message, state: FSMContext):
         return
     
     await state.update_data(app=app_name)
-    
+
+    if app_name == "Еда":
+        await prompt_eats_tracker_choice(message)
+        return
+
     await prompt_reattribution(message, app_name=app_name)
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_eats_tracker_choice)
+async def process_eats_tracker_choice(message: types.Message, state: FSMContext):
+    """Обработка выбора трекера для Еды"""
+    choice = message.text.strip()
+
+    if choice == BACK_BUTTON_TEXT:
+        await prompt_app(message)
+        return
+
+    tracker_map = {
+        "Partners_new": "1c5h66r3_1cye0uen",
+        "SMM": "jrzfg8i_wg988s5",
+        "dineout": "1tfiic8a_1tiyod4w"
+    }
+
+    if choice == "Настроить атрибуцию":
+        await prompt_reattribution(message, app_name="Еда")
+        return
+
+    if choice in tracker_map:
+        await state.update_data(adj_t_override=tracker_map[choice])
+        await prompt_campaign(message)
+        return
+
+    await message.answer(
+        "❌ Пожалуйста, выбери один из предложенных вариантов.",
+        reply_markup=keyboard_eats_tracker_choice()
+    )
 
 
 @dp.message_handler(state=LinkBuilder.waiting_for_reattribution)
