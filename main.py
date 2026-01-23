@@ -2,7 +2,7 @@ import os
 import re
 import logging
 from datetime import datetime
-from urllib.parse import quote, urlparse, parse_qs, unquote
+from urllib.parse import quote, urlparse, parse_qs, parse_qsl, unquote
 from typing import Dict, Any, Optional, Tuple, List
 
 from aiogram import Bot, Dispatcher, types
@@ -82,6 +82,7 @@ class LinkBuilder(StatesGroup):
     waiting_for_eats_shop_url = State()
     waiting_for_eats_collections_url = State()
     waiting_for_eats_restaurant_url = State()
+    waiting_for_eats_url_deeplink = State()
     waiting_for_route_start = State()
     waiting_for_route_end = State()
     waiting_for_custom_deeplink = State()
@@ -209,7 +210,7 @@ def get_action_type_options(app_name: Optional[str]) -> List[str]:
     if app_name == "Yango":
         return [OPEN_APP_OTHER, "Промокод", "Тариф", "Баннер", "Свой диплинк"]
     if app_name == "Еда":
-        return [OPEN_APP_OTHER, "Ресторан", "Свой диплинк"]
+        return [OPEN_APP_OTHER, "Ресторан", "Диплинк из URL", "Свой диплинк"]
     return [OPEN_APP_OTHER, "Свой диплинк"]
 
 
@@ -326,6 +327,14 @@ async def prompt_eats_restaurant_url(message: types.Message) -> None:
         reply_markup=keyboard_back_only()
     )
     await LinkBuilder.waiting_for_eats_restaurant_url.set()
+
+
+async def prompt_eats_url_deeplink(message: types.Message) -> None:
+    await message.answer(
+        "🔗 Введи URL (обязательно eda.yandex в домене). Из него будет создан диплинк:",
+        reply_markup=keyboard_back_only()
+    )
+    await LinkBuilder.waiting_for_eats_url_deeplink.set()
 
 
 async def prompt_tariff(message: types.Message) -> None:
@@ -658,6 +667,9 @@ async def process_action_type(message: types.Message, state: FSMContext):
     elif action == "Ресторан":
         await prompt_eats_restaurant_url(message)
 
+    elif action == "Диплинк из URL":
+        await prompt_eats_url_deeplink(message)
+
     elif action == "Свой диплинк":
         await prompt_custom_deeplink(message, state)
 
@@ -794,6 +806,28 @@ def build_eats_restaurant_deeplink(restaurant_url: str) -> Optional[str]:
     return f"eda.yandex://restaurant/{place_slug}"
 
 
+def build_eats_url_deeplink(source_url: str) -> Optional[str]:
+    try:
+        parsed = urlparse(source_url)
+    except Exception:
+        return None
+
+    host = parsed.netloc.lower()
+    if not host.startswith("eda.yandex"):
+        return None
+
+    path = parsed.path.lstrip("/")
+    query_items = parse_qsl(parsed.query, keep_blank_values=True)
+    if query_items:
+        query_parts = []
+        for key, value in query_items:
+            encoded_value = quote(value, safe="") if value else ""
+            query_parts.append(f"{key}={encoded_value}")
+        query = "&".join(query_parts)
+        return f"eda.yandex://{path}?{query}"
+    return f"eda.yandex://{path}"
+
+
 @dp.message_handler(state=LinkBuilder.waiting_for_eats_shop_url)
 async def process_eats_shop_url(message: types.Message, state: FSMContext):
     """Обработка ссылки на магазин Еды"""
@@ -850,6 +884,26 @@ async def process_eats_restaurant_url(message: types.Message, state: FSMContext)
         await message.answer(
             "❌ Нужна ссылка на ресторан Еды: домен eda.yandex и в пути /r/, "
             "и параметр placeSlug. Попробуй ещё раз:"
+        )
+        return
+
+    await state.update_data(deeplink=deeplink)
+    await ask_desktop_url(message, state)
+
+
+@dp.message_handler(state=LinkBuilder.waiting_for_eats_url_deeplink)
+async def process_eats_url_deeplink(message: types.Message, state: FSMContext):
+    """Обработка URL для диплинка Еды"""
+    source_url = message.text.strip()
+
+    if source_url == BACK_BUTTON_TEXT:
+        await prompt_action_type_with_state(message, state)
+        return
+
+    deeplink = build_eats_url_deeplink(source_url)
+    if not deeplink:
+        await message.answer(
+            "❌ Нужен URL с доменом eda.yandex (любая зона). Попробуй ещё раз:"
         )
         return
 
