@@ -1264,17 +1264,8 @@ async def process_desktop_url(message: types.Message, state: FSMContext):
     encoded_campaign = quote(f'"{campaign_value}"')
     encoded_adgroup = quote(f'"{adgroup_value}"')
     
-    app_name = user_data.get('app', GO_APP_NAME)
-    app_tokens_by_app = {
-        GO_APP_NAME: "%2255ug2ntb3uzf%22%2C%22cs75zaz26h8x%22",
-        # Заглушки для токенов других приложений — будут заменены позже
-        "Еда": "%22TODO_EATS_APP_TOKEN%22"
-    }
-    app_tokens = app_tokens_by_app.get(app_name, "%22TODO_APP_TOKEN%22")
-    
     stats_url = (
         "https://suite.adjust.com/datascape/report?"
-        f"app_token__in={app_tokens}&"
         "utc_offset=%2B00%3A00&reattributed=all&attribution_source=dynamic&"
         "attribution_type=all&ad_spend_mode=network&date_period=-7d%3A-1d&"
         "cohort_maturity=immature&sandbox=false&assisting_attribution_type=all&"
