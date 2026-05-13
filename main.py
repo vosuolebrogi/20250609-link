@@ -58,7 +58,7 @@ ACTION_TYPE_OPTIONS = [
     "Баннер",
     "Свой диплинк"
 ]
-SERVICE_OPTIONS = ["Еда", "Лавка", "Драйв", "Маркет", "Самокаты"]
+SERVICE_OPTIONS = ["Еда", "Лавка", "Драйв", "Маркет", "Самокаты", "Транспорт"]
 TARIFF_OPTIONS = [
     "Эконом",
     "Комфорт",
@@ -749,7 +749,8 @@ async def process_service(message: types.Message, state: FSMContext):
     """Обработка выбора сервиса"""
     # Специальные диплинки для некоторых сервисов
     special_service_map = {
-        "Самокаты": "yandextaxi://scooters"
+        "Самокаты": "yandextaxi://scooters",
+        "Транспорт": "yandextaxi://masstransit"
     }
     
     # Стандартные сервисы через external
